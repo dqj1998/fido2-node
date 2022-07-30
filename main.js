@@ -2,15 +2,23 @@ const http = require("http");
 const port = 3000;
 
 const server = http.createServer((request, response) => {
-    const url = new URL(request.url, `http://${request.headers.host}`)
+  const url = new URL(request.url, `http://${request.headers.host}`)
     
-    response.writeHead(200, {
-      "Content-Type": "text/html"
-    });
-
-    const responseMessage = "<h1>Hello World, dqj1998</h1>";
-    response.end(responseMessage);
-    console.log(`Responsed : ${responseMessage}`);
+  if(request.method === 'GET') {
+    let html=""
+    try{
+        let real_path;
+        if(url.pathname === '/')real_path='fido2.html'
+        else real_path = url.pathname
+        html = require('fs').readFileSync('views/'+real_path);
+    }catch(ex){
+        html=ex.message
+    }
+    response.writeHead(200, {'Content-Type': 'text/html'});
+    response.end(html);
+  }else if(request.method === 'POST') {
+  }
+  
 });
 
 server.listen(port);
