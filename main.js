@@ -1,7 +1,15 @@
 const http = require("http");
-const port = 3000;
 
-const server = http.createServer((request, response) => {
+const port = 3000;
+const server = http.createServer();
+
+server.on('request', AppController);
+
+server.listen(port);
+console.log(`Started server: ${port}`);
+
+
+async function AppController(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`)
     
   if(request.method === 'GET') {
@@ -17,9 +25,7 @@ const server = http.createServer((request, response) => {
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.end(html);
   }else if(request.method === 'POST') {
+   
   }
   
-});
-
-server.listen(port);
-console.log(`Started server: ${port}`);
+}
