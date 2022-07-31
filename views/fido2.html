@@ -3,11 +3,250 @@
 <head>
 <meta charset="UTF-8">
 <title>FIDO2</title>
+<script src="jquery-3.5.1.js"></script>
+<script src="tools.js"></script>
 <script>
+    var fidoServerURL='http://localhost:3000';
+
+    function checkUid(){
+        var uid=$('#uid').val();
+        if(!uid || 0==uid.length){
+            alert('Please input uid.');
+            return null;
+        }
+        return uid;
+    }
+
+    function isWebAuthnSupported() {  
+        if (window.PublicKeyCredential) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    function makePublicKey(attOptsResp) {
+        if (attOptsResp.excludeCredentials) {
+            attOptsResp.excludeCredentials = attOptsResp.excludeCredentials.map(
+                function (cred) {
+                    cred.id = _base64ToArrayBuffer(_fromBase64URL(cred.id));
+                    cred.transports = ["internal", "usb", "ble", "nfc"];
+                    return cred;
+                }
+            );
+
+            console.log("Attestation Options:");
+            console.log(attOptsResp);
+        }
+
+        const keys = {
+            publicKey: {
+                attestation: attOptsResp.attestation,
+                authenticatorSelection: attOptsResp.authenticatorSelection,
+                excludeCredentials: attOptsResp.excludeCredentials,
+                rp: attOptsResp.rp,
+                user: {
+                    id: _base64ToArrayBuffer(_fromBase64URL(attOptsResp.user.id)),
+                    name: attOptsResp.user.name,
+                    displayName: attOptsResp.user.displayName,
+                },
+                pubKeyCredParams: attOptsResp.pubKeyCredParams,
+                timeout: attOptsResp.timeout,
+                challenge: _base64ToArrayBuffer(_fromBase64URL(attOptsResp.challenge)),
+            }
+        }
+        return keys;
+    }
+
+    function doAttestation(username, displayName) {
+        const attestationOptions = {
+            username: username,
+            displayName: displayName,
+            authenticatorSelection: {
+            authenticatorAttachment: "platform",
+            userVerification: "preferred",
+            requireResidentKey: true,
+            },
+            attestation: "none",
+        };
+
+        console.log("Attestation start");
+        console.log(JSON.stringify(attestationOptions, null, 2));
+
+        fetch(fidoServerURL + "/attestation/options", {
+            method: "POST",
+            cache: "no-cache",
+            headers: {
+            "Content-Type": "application/json"
+            },
+            body: JSON.stringify(attestationOptions),
+        })
+	    .then((res) => res.json())
+	    .then((resp) => {
+            console.log("/attestation/options response: ");
+	        console.log(JSON.stringify(resp, null, 2));
+            if (resp.status === "err") {
+                throw "Cannot reg, user may exist!";
+            }else{
+                return navigator.credentials.create(makePublicKey(resp));
+            }      
+	    })
+	    .then((res) => {
+            if (res) {
+                let attResult = {
+                    id: res.id,
+                    rawId: _toBase64URL(btoa(_bufferToString(res.rawId))),
+                    type: "public-key",
+                    response: {
+                        clientDataJSON: _toBase64URL(
+                            btoa(_bufferToString(res.response.clientDataJSON))
+                        ),
+                        attestationObject: _toBase64URL(
+                            btoa(_bufferToString(res.response.attestationObject))
+                        ),
+                    },
+                };
+
+                return fetch(
+                    fidoServerURL + "/attestation/result",
+                    {
+                        method: "POST",
+                        cache: "no-cache",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(attResult),
+                    }
+                );
+            } else {
+                alert("Undefined Result");
+            }
+        })
+        .then((res) => res.json())
+        .then((resp) => {
+            if (resp) {
+                if (resp.status === "ok") {
+                    alert("Completed Attestation");
+                } else {
+                    alert(`Server Error: ${resp.errorMessage}`);
+                }
+            } else {
+                alert("Svr result error");
+            }
+        })
+        .catch((err) => {
+            alert('/attestation/options:'+err);
+        });
+    }
+
+    function doAssertion(username = "") {
+        let authnOptions = {
+            "username": username,
+            "userVerification": "preferred",
+            "authenticatorSelection": {
+            "authenticatorAttachment": "platform"
+            }
+        };
+
+        fetch(fidoServerURL + "/assertion/options", {
+            method: "POST",
+            cache: "no-cache",
+            headers: {
+            "Content-Type": "application/json"
+            },
+            body: JSON.stringify(authnOptions)
+        })
+	    .then(res => res.json())
+	    .then(resp => {
+            if('ok' === resp.status){
+                resp.allowCredentials = resp.allowCredentials || [];
+                let mappedAllowCreds = resp.allowCredentials.map(x => {
+                    return {
+                        id: _base64ToArrayBuffer(_fromBase64URL(x.id)),
+                        type: x.type,
+                        transports: x.transports
+                    }
+                });
+
+                return navigator.credentials.get({
+                    publicKey: {
+                        challenge: _base64ToArrayBuffer(_fromBase64URL(resp.challenge)),
+                        timeout: resp.timeout,
+                        rpId: resp.rpId,
+                        userVerification: resp.userVerification,
+                        allowCredentials: mappedAllowCreds
+                    }
+                }).catch(err => {
+                    console.error("navigator.credentials.get error with code: " + err.code + " and message: " + err.message + " and name: " + err.name);
+                });
+            }else{
+                alert('Auth err, user may does NOT exist.')
+                throw 'Auth err, user may does NOT exist.'
+            }            
+        })
+	    .then(resp => {
+            if(resp) {
+                let authRequest = {
+                    id: resp.id,
+                    rawId: _toBase64URL(btoa(_bufferToString(resp.rawId))),
+                    type: resp.type,
+                    response: {
+                    authenticatorData: _toBase64URL(btoa(_bufferToString(resp.response.authenticatorData))),
+                    clientDataJSON: _toBase64URL(btoa(_bufferToString(resp.response.clientDataJSON))),
+                    signature: _toBase64URL(btoa(_bufferToString(resp.response.signature))),
+                    userHandle: _toBase64URL(btoa(_bufferToString(resp.response.userHandle)))
+                    }
+                };
+                return fetch(fidoServerURL + "/assertion/result", {
+                    method: "POST",
+                    cache: "no-cache",
+                    headers: {
+                    "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(authRequest)
+                })
+            }
+        })
+	    .then(function (res) {
+            return res
+        })
+	    .then(res => res.json())
+	    .then(resp => {
+            if(resp){
+            if (resp.status === 'ok') {
+                alert("Authentication succ");
+            } else {
+                alert(`Authentication error: ${resp}`)
+            }
+            }
+        })
+	    .catch(err => {
+            let msg = err.message ? err.message : err;
+            console.error("Assertion err: ", err);
+        });
+	}
+
+    function regFIDO2(){
+        var uid=checkUid();
+        if(!uid)return;
+        if(isWebAuthnSupported())doAttestation(uid, 'User_'+uid);
+        else alert('Your browser does NOT support FIDO2');
+    }
+
+    function authFIDO2(){
+        var uid=checkUid();
+        if(!uid)return;
+        if(isWebAuthnSupported())doAssertion(uid);
+        else alert('Your browser does NOT support FIDO2');
+    }
+
 </script>
 </head>
 <body>
     <h1>FIDO2</h1>
     <h4>User name: <input id='uid' name='uid'></h4>
+    <hr>
+    <button onclick="regFIDO2();">Reg FIDO2</button><br><br>
+    <button onclick="authFIDO2();">Auth FIDO2</button><br><br>
 </body>
 </html>

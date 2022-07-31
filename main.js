@@ -1,7 +1,24 @@
+
 const http = require("http");
+const base64url = require('base64url');
+const crypto    = require('crypto');
+
+const { v4: uuidv4 } = require('uuid');
 
 const port = 3000;
 const server = http.createServer();
+
+const { Fido2Lib } = require("fido2-lib");
+
+const FIDO_RP_NAME = process.env.FIDO_RP_NAME || "Local FIDO Host";
+const FIDO_ORIGIN = process.env.FIDO_ORIGIN || "http://localhost"+(port===80||port===443?"":":"+port);
+let fido2lib = new Fido2Lib({
+  rpName: FIDO_RP_NAME
+});
+
+let database = {};//use json as DB, all data will lost after restart program.
+
+let sessions = {};
 
 server.on('request', AppController);
 
@@ -25,7 +42,202 @@ async function AppController(request, response) {
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.end(html);
   }else if(request.method === 'POST') {
-   
+    try{
+      let real_path;
+      if(url.pathname == '/assertion/options'){
+        const body = await loadJsonBody(request)
+    
+        let username = body.username;
+    
+        if(!database[username] || !database[username].registered) {
+          response.end(JSON.stringify({
+            'status': 'failed',
+            'message': `Username ${username} does not exist`
+          }));
+          return
+        }
+    
+        var authnOptions = await fido2lib.assertionOptions();
+        authnOptions.challenge = base64url.encode(uuidv4())//base64url.encode(authnOptions.challenge);
+    
+        let allowCredentials = [];
+        for(let authr of database[username].attestation) {
+            allowCredentials.push({
+              type: 'public-key',
+              id: authr.credId,
+              transports: ['internal', 'usb', 'nfc', 'ble']
+            })
+        }
+        authnOptions.allowCredentials = allowCredentials;
+        console.log(authnOptions);
+    
+        //context.req.session.challenge = authnOptions.challenge;
+        //context.req.session.username  = username;
+        sessions[authnOptions.challenge] = {
+          'challenge': authnOptions.challenge,
+          'username': username
+        };
+    
+        authnOptions.status = 'ok';
+    
+        response.end(JSON.stringify(authnOptions));
+      }else if(url.pathname == '/assertion/result'){
+        const body = await loadJsonBody(request)
+
+        const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
+        const cltdatatxt = String.fromCharCode.apply("", cda)
+        const clientData = JSON.parse(cltdatatxt)
+    
+        var attestation = null;
+        for( var i = 0 ; i < database[sessions[clientData.challenge].username].attestation.length ; i++ ){
+          if( database[sessions[clientData.challenge].username].attestation[i].credId == body.id ){
+            attestation = database[sessions[clientData.challenge].username].attestation[i];
+            break;
+          }
+        }
+
+        if( !attestation ){
+          let rtn = {
+            'status': 'failed',
+            'message': 'key is not found.'
+          }
+          response.end(JSON.stringify(rtn));
+          return
+        }
+    
+        var assertionExpectations = {
+          challenge: sessions[clientData.challenge].challenge,
+          origin: FIDO_ORIGIN,
+          factor: "either",
+          publicKey: attestation.publickey,
+          prevCounter: attestation.counter,
+          userHandle: database[sessions[clientData.challenge].username].id //null
+        };
+    
+        body.rawId = new Uint8Array(base64url.toBuffer(body.rawId)).buffer;
+        var authnResult = await fido2lib.assertionResult(body, assertionExpectations);
+        console.log(authnResult);
+    
+        let rtn='';
+        if(authnResult.audit.complete) {
+          attestation.counter = authnResult.authnrData.get('counter');    
+          
+          rtn = {
+            'status': 'ok',
+            credId: body.id,
+            counter: attestation.counter
+          }
+        } else {
+          rtn = {
+            'status': 'failed',
+            'message': 'Can not authenticate signature!'
+          }
+        }
+
+        delete sessions[clientData.challenge]
+        
+        response.end(JSON.stringify(rtn));
+      }else if(url.pathname === '/attestation/options'){
+        const body = await loadJsonBody(request)
+
+        let username = body.username;
+
+        if(database[username] && database[username].registered) {
+          response.end(JSON.stringify({
+            'status': 'err',
+            'message': `Username ${username} already exists`
+          }));
+          return;
+        }
+
+        const id = uuidv4();
+
+        let registrationOptions = await fido2lib.attestationOptions();
+        registrationOptions.challenge = base64url.encode(uuidv4())//use challenge as session id
+        registrationOptions.user.id = id;
+        registrationOptions.user.name = username;
+        registrationOptions.user.displayName = username;
+        console.log(registrationOptions);
+
+        database[username] = {
+          'name': username,
+          'registered': false,
+          'id': id,
+          'attestation': []
+        };
+
+        sessions[registrationOptions.challenge] = {
+          'challenge': registrationOptions.challenge,
+          'username': username
+        };
+
+        registrationOptions.status = 'ok';
+
+        response.end(JSON.stringify(registrationOptions));
+
+      }else if( url.pathname == '/attestation/result'){
+        const body = await loadJsonBody(request)
+        
+        const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
+        const cltdatatxt = String.fromCharCode.apply("", cda)
+        const clientData = JSON.parse(cltdatatxt)
+
+        let attestationExpectations = {
+            challenge: sessions[clientData.challenge].challenge,
+            origin: FIDO_ORIGIN,
+            factor: "either"
+        };
+        body.rawId = new Uint8Array(base64url.toBuffer(body.rawId)).buffer;
+        let regResult = await fido2lib.attestationResult(body, attestationExpectations);
+        console.log(regResult);
+    
+        let credId = base64url.encode(regResult.authnrData.get('credId'));
+        let counter = regResult.authnrData.get('counter');
+        database[sessions[clientData.challenge].username].attestation.push({ 
+            publickey : regResult.authnrData.get('credentialPublicKeyPem'),
+            counter : counter,
+            fmt: regResult.authnrData.get('fmt'),
+            credId : credId
+        });
+    
+        let rtn='';
+        if(regResult.audit.complete) {
+          database[sessions[clientData.challenge].username].registered = true
+    
+          rtn = {
+            'status': 'ok',
+            credId: credId,
+            counter: counter
+          };
+        } else {
+          rtn = {
+            'status': 'failed',
+            'message': 'Can not authenticate signature!'
+          };
+        }
+
+        delete sessions[clientData.challenge]
+
+        response.end(JSON.stringify(rtn));
+      }
+    }catch(ex){
+      response.end(ex.message);
+    }
   }
   
+};
+
+async function loadJsonBody(request){
+  const buffers = [];
+
+  for await (const chunk of request) {
+    buffers.push(chunk);
+  }
+
+  const bodytxt = Buffer.concat(buffers).toString();
+
+  const body = JSON.parse(bodytxt);
+  console.log(body);
+
+  return body;
 }

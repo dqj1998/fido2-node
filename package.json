@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "base64url": "^3.0.1",
+    "fido2-lib": "^3.2.5",
+    "uuid": "^8.3.2"
+  }
+}
