@@ -85,8 +85,8 @@
 	    .then((resp) => {
             console.log("/attestation/options response: ");
 	        console.log(JSON.stringify(resp, null, 2));
-            if (resp.status === "err") {
-                throw "Cannot reg, user may exist!";
+            if (resp.status === "failed") {
+                throw resp.message;
             }else{
                 return navigator.credentials.create(makePublicKey(resp));
             }      
@@ -128,7 +128,7 @@
                 if (resp.status === "ok") {
                     alert("Completed Attestation");
                 } else {
-                    alert(`Server Error: ${resp.errorMessage}`);
+                    alert(`Server Error: ${resp.message}`);
                 }
             } else {
                 alert("Svr result error");
@@ -144,7 +144,7 @@
             "username": username,
             "userVerification": "preferred",
             "authenticatorSelection": {
-            "authenticatorAttachment": "platform"
+            "authenticatorAttachment":  "cross-platform" //, //"platform",
             }
         };
 
@@ -164,7 +164,7 @@
                     return {
                         id: _base64ToArrayBuffer(_fromBase64URL(x.id)),
                         type: x.type,
-                        transports: x.transports
+                        transports: x.transports // can set like ['internal', 'usb'] to override server settings
                     }
                 });
 
@@ -180,8 +180,8 @@
                     console.error("navigator.credentials.get error with code: " + err.code + " and message: " + err.message + " and name: " + err.name);
                 });
             }else{
-                alert('Auth err, user may does NOT exist.')
-                throw 'Auth err, user may does NOT exist.'
+                alert('Auth err, '+resp.message)
+                throw 'Auth err, '+resp.message
             }            
         })
 	    .then(resp => {
