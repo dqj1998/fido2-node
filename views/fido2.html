@@ -6,7 +6,7 @@
 <script src="jquery-3.5.1.js"></script>
 <script src="tools.js"></script>
 <script>
-    var fidoServerURL='http://localhost:3000';
+    var fidoServerURL='https://mac.dqj-macpro.com';//'http://localhost:3000';
 
     function checkUid(){
         var uid=$('#uid').val();
@@ -63,11 +63,11 @@
             username: username,
             displayName: displayName,
             authenticatorSelection: {
-            authenticatorAttachment: "platform",
-            userVerification: "preferred",
-            requireResidentKey: true,
+                //authenticatorAttachment: "platform",
+                userVerification: "preferred",
+                requireResidentKey: false,
             },
-            attestation: "none",
+            //attestation: "none",
         };
 
         console.log("Attestation start");
@@ -95,17 +95,20 @@
             if (res) {
                 let attResult = {
                     id: res.id,
-                    rawId: _toBase64URL(btoa(_bufferToString(res.rawId))),
+                    rawId: Array.from(new Uint8Array(res.rawId)),
                     type: "public-key",
                     response: {
                         clientDataJSON: _toBase64URL(
                             btoa(_bufferToString(res.response.clientDataJSON))
                         ),
-                        attestationObject: _toBase64URL(
-                            btoa(_bufferToString(res.response.attestationObject))
-                        ),
+                        attestationObject:
+                            Array.from(new Uint8Array(res.response.attestationObject))//btoa(_bufferToString(res.response.attestationObject))
+                        ,
                     },
                 };
+
+                console.log("/attestation/result attResult: ");
+	            console.log(JSON.stringify(attResult, null, 2));
 
                 return fetch(
                     fidoServerURL + "/attestation/result",
@@ -140,11 +143,11 @@
     }
 
     function doAssertion(username = "") {
-        let authnOptions = {
-            "username": username,
-            "userVerification": "preferred",
-            "authenticatorSelection": {
-            "authenticatorAttachment":  "cross-platform" //, //"platform",
+        const authnOptions = {
+            username: username,
+            authenticatorSelection: {
+                //authenticatorAttachment: "platform",
+                userVerification: "preferred"
             }
         };
 
@@ -188,7 +191,7 @@
             if(resp) {
                 let authRequest = {
                     id: resp.id,
-                    rawId: _toBase64URL(btoa(_bufferToString(resp.rawId))),
+                    rawId: Array.from(new Uint8Array(resp.rawId)),
                     type: resp.type,
                     response: {
                     authenticatorData: _toBase64URL(btoa(_bufferToString(resp.response.authenticatorData))),

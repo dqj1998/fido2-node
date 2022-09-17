@@ -1,19 +1,27 @@
 
-const http = require("http");
+const https = require("https");
 const base64url = require('base64url');
 const crypto    = require('crypto');
+const fs        = require('fs');
 
 const { v4: uuidv4 } = require('uuid');
 
-const port = 3000;
-const server = http.createServer();
+//const port = 3000;
+//const server = http.createServer();
+const port = 443;
+const options = {
+  key: fs.readFileSync('ssl/dqj-macpro.key.pem'),
+  cert: fs.readFileSync('ssl/dqj-macpro.crt')
+};
+const server = https.createServer(options)
 
 const { Fido2Lib } = require("fido2-lib");
 
-const FIDO_RP_NAME = process.env.FIDO_RP_NAME || "Local FIDO Host";
-const FIDO_ORIGIN = process.env.FIDO_ORIGIN || "http://localhost"+(port===80||port===443?"":":"+port);
+const FIDO_RP_NAME = process.env.FIDO_RP_NAME || "mac.dqj-macpro.com FIDO Host";
+const FIDO_ORIGIN = process.env.FIDO_ORIGIN || "https://mac.dqj-macpro.com"+(port===80||port===443?"":":"+port);//"http://localhost"+(port===80||port===443?"":":"+port);
 let fido2lib = new Fido2Lib({
-  rpName: FIDO_RP_NAME
+  rpName: FIDO_RP_NAME,
+  timeout: 300 * 1000 //ms
 });
 
 let database = {};//use json as DB, all data will lost after restart program.
@@ -27,7 +35,7 @@ console.log(`Started server: ${port}`);
 
 
 async function AppController(request, response) {
-  const url = new URL(request.url, `http://${request.headers.host}`)
+  const url = new URL(request.url, `https://${request.headers.host}`)
     
   if(request.method === 'GET') {
     let html=""
@@ -58,20 +66,22 @@ async function AppController(request, response) {
         }
     
         let authnOptions = await fido2lib.assertionOptions(body);
-        authnOptions.challenge = base64url.encode(uuidv4())
+        let challengeTxt = uuidv4()
+        let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
+        authnOptions.challenge = Array.from(new TextEncoder().encode(challengeTxt))
     
         let allowCredentials = [];
         for(let authr of database[username].attestation) {
             allowCredentials.push({
               type: 'public-key',
-              id: authr.credId,
+              id: Array.from(new Uint8Array(authr.credId)),
               transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']// can be overrided by client
             })
         }
         authnOptions.allowCredentials = allowCredentials;
         console.log(authnOptions);
     
-        sessions[authnOptions.challenge] = {
+        sessions[challengeBase64] = {
           'challenge': authnOptions.challenge,
           'username': username
         };
@@ -82,13 +92,27 @@ async function AppController(request, response) {
       }else if(url.pathname == '/assertion/result'){
         const body = await loadJsonBody(request)
 
-        const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
+        /*const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
         const cltdatatxt = String.fromCharCode.apply("", cda)
-        const clientData = JSON.parse(cltdatatxt)
+        console.log('clientDataJSON:'); console.log(cltdatatxt)*/
+        const clientData = JSON.parse(body.response.clientDataJSON)
+
+        body.response.authenticatorData = new Uint8Array(body.response.authenticatorData).buffer
+        body.response.signature = new Uint8Array(body.response.signature).buffer
+        body.response.userHandle = new TextDecoder().decode(new Uint8Array(body.response.userHandle).buffer)   
+        body.response.clientDataJSON = Uint8Array.from(new TextEncoder().encode(body.response.clientDataJSON)).buffer
     
         let attestation = null;
         for( let i = 0 ; i < database[sessions[clientData.challenge].username].attestation.length ; i++ ){
-          if( database[sessions[clientData.challenge].username].attestation[i].credId == body.id ){
+          //let debugId=new Uint8Array(base64url.toBuffer(body.id)).buffer//for debug
+          if( body.rawId ){
+            body.rawId = new Uint8Array(body.rawId).buffer;
+          }else{
+            body.rawId = new Uint8Array(base64url.toBuffer(body.id)).buffer
+          }          
+          let reqId = body.rawId
+          let dbId = database[sessions[clientData.challenge].username].attestation[i].credId         
+          if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
             attestation = database[sessions[clientData.challenge].username].attestation[i];
             break;
           }
@@ -113,9 +137,8 @@ async function AppController(request, response) {
           publicKey: attestation.publickey,
           prevCounter: attestation.counter,
           userHandle: database[cur_session.username].id //null
-        };
-    
-        body.rawId = new Uint8Array(base64url.toBuffer(body.rawId)).buffer;
+        };    
+        
         let authnResult = await fido2lib.assertionResult(body, assertionExpectations);
         console.log(authnResult);
     
@@ -149,7 +172,11 @@ async function AppController(request, response) {
         }
 
         let registrationOptions = await fido2lib.attestationOptions();
-        registrationOptions.challenge = base64url.encode(uuidv4())//use challenge as session id
+        let challengeTxt = uuidv4()
+        let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
+        registrationOptions.challenge = Array.from(new TextEncoder().encode(challengeTxt)) //base64url.encode(uuidv4())//use challenge as session id
+
+        registrationOptions.authenticatorSelection = body.authenticatorSelection
 
         //Prevent register same authenticator
         if(database[username] && database[username].attestation){
@@ -157,7 +184,7 @@ async function AppController(request, response) {
           for(let authr of database[username].attestation) {
             excludeCredentials.push({
                 type: 'public-key',
-                id: authr.credId,
+                id: Array.from(new Uint8Array(authr.credId)),
                 transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']
               })
           }
@@ -179,7 +206,7 @@ async function AppController(request, response) {
           };
         }        
 
-        sessions[registrationOptions.challenge] = {
+        sessions[challengeBase64] = {
           'challenge': registrationOptions.challenge,
           'username': username
         };
@@ -191,10 +218,22 @@ async function AppController(request, response) {
       }else if( url.pathname == '/attestation/result'){
         const body = await loadJsonBody(request)
         
-        const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
+        /*const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
         const cltdatatxt = String.fromCharCode.apply("", cda)
-        const clientData = JSON.parse(cltdatatxt)
+        console.log('clientDataJSON:'); console.log(cltdatatxt)*/
+        const clientData = JSON.parse(body.response.clientDataJSON)
 
+        /*const tpAtt = typeof body.response.attestationObject //for debug
+        const attobj=new Buffer.from(body.response.attestationObject)
+        var ab = new ArrayBuffer(attobj.length);
+        var view = new Uint8Array(ab);
+        for (var i = 0; i < attobj.length; ++i) {
+            view[i] = attobj[i];
+        }*/
+        body.rawId = new Uint8Array(body.rawId).buffer; //new Uint8Array(base64url.toBuffer(body.rawId)).buffer;
+        body.response.attestationObject = new Uint8Array(body.response.attestationObject).buffer        
+        body.response.clientDataJSON = Uint8Array.from(new TextEncoder().encode(body.response.clientDataJSON)).buffer
+        
         const cur_session = sessions[clientData.challenge]
         delete sessions[clientData.challenge]
 
@@ -203,11 +242,11 @@ async function AppController(request, response) {
             origin: FIDO_ORIGIN,
             factor: "either"
         };
-        body.rawId = new Uint8Array(base64url.toBuffer(body.rawId)).buffer;
+        
         let regResult = await fido2lib.attestationResult(body, attestationExpectations);
         console.log(regResult);
 
-        const credId = base64url.encode(regResult.authnrData.get('credId'));
+        const credId = regResult.authnrData.get('credId')
         const aaguid = buf2hex(regResult.authnrData.get('aaguid'))//No required info for reg/auth
         const counter = regResult.authnrData.get('counter');
         database[cur_session.username].attestation.push({
@@ -218,20 +257,16 @@ async function AppController(request, response) {
             aaguid : aaguid
         });
     
-        let rtn='';
+        let rtn={};
         if(regResult.audit.complete) {
           database[cur_session.username].registered = true
     
-          rtn = {
-            'status': 'ok',
-            credId: credId,
-            counter: counter
-          };
+          rtn.status = 'ok',
+          rtn.counter = counter
+          rtn.credId = Array.from(new Uint8Array(regResult.authnrData.get('credId')))
         } else {
-          rtn = {
-            'status': 'failed',
-            'message': 'Can not authenticate signature!'
-          };
+          rtn.status ='failed',
+          rtn.message = 'Can not authenticate signature!'
         }
 
         response.end(JSON.stringify(rtn));
@@ -247,6 +282,14 @@ function buf2hex(buffer) { // buffer is an ArrayBuffer
   return [...new Uint8Array(buffer)]
       .map(x => x.toString(16).padStart(2, '0'))
       .join('');
+}
+
+function equlsArrayBuffer(a, b){
+  if(a.byteLength!=a.byteLength) return false;
+  for(var i=0; a.byteLength > i; i++){
+    if(a[i]!=b[i])return false;
+  }
+  return true 
 }
 
 async function loadJsonBody(request){
