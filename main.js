@@ -25,7 +25,7 @@ let fido2lib = new Fido2Lib({
 });
 
 let database = {};//use json as DB, all data will lost after restart program.
-
+let mapCredidUsername = {};//Link cred ids with usernames
 let sessions = {};
 
 server.on('request', AppController);
@@ -57,7 +57,9 @@ async function AppController(request, response) {
     
         let username = body.username;
     
-        if(!database[username] || !database[username].registered) {
+        //Client-side discoverable Credential does not pass username
+
+        if(username && username.length > 0 && (!database[username] || !database[username].registered)) {
           response.end(JSON.stringify({
             'status': 'failed',
             'message': `Username ${username} does not exist`
@@ -66,24 +68,30 @@ async function AppController(request, response) {
         }
     
         let authnOptions = await fido2lib.assertionOptions(body);
+        /* dqj: set by lib 
+        if(!username){//Try discoverable 
+          authnOptions["mediation"] = "conditional"
+        }*/
         let challengeTxt = uuidv4()
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
         authnOptions.challenge = Array.from(new TextEncoder().encode(challengeTxt))
     
         let allowCredentials = [];
-        for(let authr of database[username].attestation) {
-            allowCredentials.push({
-              type: 'public-key',
-              id: Array.from(new Uint8Array(authr.credId)),
-              transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']// can be overrided by client
-            })
+        if( username && username.length > 0 ){
+            for(let authr of database[username].attestation) {
+              allowCredentials.push({
+                type: 'public-key',
+                id: Array.from(new Uint8Array(authr.credId)),
+                transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']// can be overrided by client
+              })
+          }
+          authnOptions.allowCredentials = allowCredentials;
+          console.log(authnOptions);
         }
-        authnOptions.allowCredentials = allowCredentials;
-        console.log(authnOptions);
-    
+            
         sessions[challengeBase64] = {
           'challenge': authnOptions.challenge,
-          'username': username
+          'username': username?username:""
         };
     
         authnOptions.status = 'ok';
@@ -103,19 +111,29 @@ async function AppController(request, response) {
         body.response.clientDataJSON = Uint8Array.from(new TextEncoder().encode(body.response.clientDataJSON)).buffer
     
         let attestation = null;
-        for( let i = 0 ; i < database[sessions[clientData.challenge].username].attestation.length ; i++ ){
-          //let debugId=new Uint8Array(base64url.toBuffer(body.id)).buffer//for debug
-          if( body.rawId ){
-            body.rawId = new Uint8Array(body.rawId).buffer;
-          }else{
-            body.rawId = new Uint8Array(base64url.toBuffer(body.id)).buffer
-          }          
-          let reqId = body.rawId
-          let dbId = database[sessions[clientData.challenge].username].attestation[i].credId         
+
+        //let debugId=new Uint8Array(base64url.toBuffer(body.id)).buffer//for debug
+        if( body.rawId ){
+          body.rawId = new Uint8Array(body.rawId).buffer;
+        }else{
+          body.rawId = new Uint8Array(base64url.toBuffer(body.id)).buffer
+        }          
+        let reqId = body.rawId
+
+        var realUsername;
+        var attestations;
+        if(sessions[clientData.challenge].username && sessions[clientData.challenge].username.length > 0){          
+          realUsername = sessions[clientData.challenge].username
+        }else if(mapCredidUsername[reqId]){//Client-side discoverable Credential process
+          realUsername = mapCredidUsername[reqId];
+        }
+        attestations = database[realUsername].attestation
+        for( let i = 0 ; attestations && i < attestations.length ; i++ ){          
+          let dbId = attestations[i].credId         
           if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
-            attestation = database[sessions[clientData.challenge].username].attestation[i];
+            attestation = attestations[i];
             break;
-          }
+          }            
         }
 
         if( !attestation ){
@@ -136,7 +154,7 @@ async function AppController(request, response) {
           factor: "either",
           publicKey: attestation.publickey,
           prevCounter: attestation.counter,
-          userHandle: database[cur_session.username].id //null
+          userHandle: database[realUsername].id
         };    
         
         let authnResult = await fido2lib.assertionResult(body, assertionExpectations);
@@ -256,7 +274,9 @@ async function AppController(request, response) {
             credId : credId,
             aaguid : aaguid
         });
-    
+        
+        mapCredidUsername[credId]=cur_session.username;
+
         let rtn={};
         if(regResult.audit.complete) {
           database[cur_session.username].registered = true
