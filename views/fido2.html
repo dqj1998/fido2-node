@@ -6,7 +6,7 @@
 <script src="jquery-3.5.1.js"></script>
 <script src="tools.js"></script>
 <script>
-    var fidoServerURL='https://mac.dqj-macpro.com';//'http://localhost:3000';
+    var fidoServerURL='https://mac.dqj-macpro.com'//'http://localhost:8080';//'http://localhost:3000';
 
     function checkUid(){
         var uid=$('#uid').val();
@@ -95,14 +95,13 @@
             if (res) {
                 let attResult = {
                     id: res.id,
-                    rawId: Array.from(new Uint8Array(res.rawId)),
+                    rawId: _toBase64URL(btoa(_bufferToString(res.rawId)))
+                    ,                            
                     type: "public-key",
                     response: {
-                        clientDataJSON: _toBase64URL(
-                            btoa(_bufferToString(res.response.clientDataJSON))
-                        ),
-                        attestationObject:
-                            Array.from(new Uint8Array(res.response.attestationObject))//btoa(_bufferToString(res.response.attestationObject))
+                        clientDataJSON: _toBase64URL(btoa(_bufferToString(res.response.clientDataJSON)))
+                        ,
+                        attestationObject: _toBase64URL(btoa(_bufferToString(res.response.attestationObject)))
                         ,
                     },
                 };

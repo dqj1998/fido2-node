@@ -74,14 +74,14 @@ async function AppController(request, response) {
         }*/
         let challengeTxt = uuidv4()
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
-        authnOptions.challenge = Array.from(new TextEncoder().encode(challengeTxt))
+        authnOptions.challenge = challengeBase64 //Array.from(new TextEncoder().encode(challengeTxt))
     
         let allowCredentials = [];
         if( username && username.length > 0 ){
             for(let authr of database[username].attestation) {
               allowCredentials.push({
                 type: 'public-key',
-                id: Array.from(new Uint8Array(authr.credId)),
+                id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
                 transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']// can be overrided by client
               })
           }
@@ -100,25 +100,25 @@ async function AppController(request, response) {
       }else if(url.pathname == '/assertion/result'){
         const body = await loadJsonBody(request)
 
-        /*const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
-        const cltdatatxt = String.fromCharCode.apply("", cda)
-        console.log('clientDataJSON:'); console.log(cltdatatxt)*/
-        const clientData = JSON.parse(body.response.clientDataJSON)
+        const clientData = JSON.parse(stringfy(body.response.clientDataJSON))
+        
+        body.response.authenticatorData = new Uint8Array(base64url.toBuffer(body.response.authenticatorData)).buffer; //bufferKeepBase64(body.response.authenticatorData)
+        body.response.signature = new Uint8Array(base64url.toBuffer(body.response.signature)).buffer; //bufferKeepBase64((body.response.signature))
+        body.response.userHandle = stringfy(body.response.userHandle);// new TextDecoder().decode(new Uint8Array(filterBase64(body.response.userHandle)).buffer)   
 
-        body.response.authenticatorData = new Uint8Array(body.response.authenticatorData).buffer
-        body.response.signature = new Uint8Array(body.response.signature).buffer
-        body.response.userHandle = new TextDecoder().decode(new Uint8Array(body.response.userHandle).buffer)   
-        body.response.clientDataJSON = Uint8Array.from(new TextEncoder().encode(body.response.clientDataJSON)).buffer
+        body.response.clientDataJSON = new Uint8Array(base64url.toBuffer(body.response.clientDataJSON)).buffer; //bufferKeepBase64(body.response.clientDataJSON)
     
         let attestation = null;
 
         //let debugId=new Uint8Array(base64url.toBuffer(body.id)).buffer//for debug
+        var reqId
         if( body.rawId ){
-          body.rawId = new Uint8Array(body.rawId).buffer;
-        }else{
-          body.rawId = new Uint8Array(base64url.toBuffer(body.id)).buffer
+          reqId = new Uint8Array(body.rawId);
+        }
+        if( !reqId || reqId.length == 0){
+          reqId = new Uint8Array(base64url.toBuffer(body.id))
         }          
-        let reqId = body.rawId
+        body.rawId = reqId.buffer;
 
         var realUsername;
         var attestations;
@@ -192,7 +192,7 @@ async function AppController(request, response) {
         let registrationOptions = await fido2lib.attestationOptions();
         let challengeTxt = uuidv4()
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
-        registrationOptions.challenge = Array.from(new TextEncoder().encode(challengeTxt)) //base64url.encode(uuidv4())//use challenge as session id
+        registrationOptions.challenge = challengeBase64//Array.from(new TextEncoder().encode(challengeTxt)) //base64url.encode(uuidv4())//use challenge as session id
 
         registrationOptions.authenticatorSelection = body.authenticatorSelection
 
@@ -202,7 +202,7 @@ async function AppController(request, response) {
           for(let authr of database[username].attestation) {
             excludeCredentials.push({
                 type: 'public-key',
-                id: Array.from(new Uint8Array(authr.credId)),
+                id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
                 transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']
               })
           }
@@ -236,10 +236,7 @@ async function AppController(request, response) {
       }else if( url.pathname == '/attestation/result'){
         const body = await loadJsonBody(request)
         
-        /*const cda=new Uint8Array(base64url.toBuffer(body.response.clientDataJSON))
-        const cltdatatxt = String.fromCharCode.apply("", cda)
-        console.log('clientDataJSON:'); console.log(cltdatatxt)*/
-        const clientData = JSON.parse(body.response.clientDataJSON)
+        const clientData = JSON.parse(stringfy(body.response.clientDataJSON))
 
         /*const tpAtt = typeof body.response.attestationObject //for debug
         const attobj=new Buffer.from(body.response.attestationObject)
@@ -248,9 +245,9 @@ async function AppController(request, response) {
         for (var i = 0; i < attobj.length; ++i) {
             view[i] = attobj[i];
         }*/
-        body.rawId = new Uint8Array(body.rawId).buffer; //new Uint8Array(base64url.toBuffer(body.rawId)).buffer;
-        body.response.attestationObject = new Uint8Array(body.response.attestationObject).buffer        
-        body.response.clientDataJSON = Uint8Array.from(new TextEncoder().encode(body.response.clientDataJSON)).buffer
+        body.rawId = new Uint8Array(base64url.toBuffer(body.rawId)).buffer; //bufferKeepBase64(body.rawId); 
+        body.response.attestationObject = new Uint8Array(base64url.toBuffer(body.response.attestationObject)).buffer//bufferKeepBase64(body.response.attestationObject)        
+        body.response.clientDataJSON = new Uint8Array(base64url.toBuffer(body.response.clientDataJSON)).buffer; //bufferKeepBase64(body.response.clientDataJSON)
         
         const cur_session = sessions[clientData.challenge]
         delete sessions[clientData.challenge]
@@ -271,11 +268,11 @@ async function AppController(request, response) {
             publickey : regResult.authnrData.get('credentialPublicKeyPem'),
             counter : counter,
             fmt : regResult.authnrData.get('fmt'),
-            credId : credId,
+            credId : new Uint8Array(credId),
             aaguid : aaguid
         });
         
-        mapCredidUsername[credId]=cur_session.username;
+        mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
 
         let rtn={};
         if(regResult.audit.complete) {
@@ -310,6 +307,33 @@ function equlsArrayBuffer(a, b){
     if(a[i]!=b[i])return false;
   }
   return true 
+}
+
+function isBase64(str) {  
+  try {
+    if (str ==='' || str.trim() ===''){ return false; }
+    return btoa(atob(str)) == str;
+  } catch (err) {
+    return false;
+  }
+}
+
+function bufferKeepBase64(input) {
+  if(isBase64(input)) return input;
+  else if(typeof input == "string")return Uint8Array.from(new TextEncoder().encode(input)).buffer
+  else return new Uint8Array(input).buffer;          
+}
+
+function stringfy(input) {
+  if(isBase64(input)){
+    const cda=new Uint8Array(base64url.toBuffer(input))
+    const cltdatatxt = String.fromCharCode.apply("", cda)
+    //console.log('clientDataJSON:'); console.log(cltdatatxt)
+    return cltdatatxt;
+  }else if(typeof input == "string") return input
+  else{
+    return new TextDecoder().decode(new Uint8Array(input)) //new TextEncoder().encode(input)
+  }
 }
 
 async function loadJsonBody(request){
