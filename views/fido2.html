@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>FIDO2</title>
 <script src="jquery-3.5.1.js"></script>
-<script src="tools.js"></script>
+<script src="tools.js?v=20221015"></script>
 <script>
     var fidoServerURL='https://mac.dqj-macpro.com'//'http://localhost:8080';//'http://localhost:3000';
 
@@ -46,7 +46,7 @@
                 excludeCredentials: attOptsResp.excludeCredentials,
                 rp: attOptsResp.rp,
                 user: {
-                    id: _base64ToArrayBuffer(_fromBase64URL(attOptsResp.user.id)),
+                    id: _stringToArrayBuffer(attOptsResp.user.id), //_base64ToArrayBuffer(_fromBase64URL(attOptsResp.user.id)),
                     name: attOptsResp.user.name,
                     displayName: attOptsResp.user.displayName,
                 },

@@ -13,6 +13,12 @@ function _base64ToArrayBuffer(base64) {
     return bytes;
 }
 
+function _stringToArrayBuffer(src) {
+    return (new Uint8Array([].map.call(src, function(c) {
+        return c.charCodeAt(0)
+      }))).buffer;
+}
+
 function _fromBase64URL(s) {
     var chk = (s = s.replace(/-/g, "+").replace(/_/g, "/")).length % 4;
     if (chk) {

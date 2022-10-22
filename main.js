@@ -10,8 +10,8 @@ const { v4: uuidv4 } = require('uuid');
 //const server = http.createServer();
 const port = 443;
 const options = {
-  key: fs.readFileSync('ssl/dqj-macpro.key.pem'),
-  cert: fs.readFileSync('ssl/dqj-macpro.crt')
+  key: fs.readFileSync('ssl/dqj_selfsigned_mac.key'),//dqj-macpro.key.pem'),
+  cert: fs.readFileSync('ssl/dqj_selfsigned_mac.crt')//dqj-macpro.crt')
 };
 const server = https.createServer(options)
 
@@ -127,15 +127,17 @@ async function AppController(request, response) {
         }else if(mapCredidUsername[reqId]){//Client-side discoverable Credential process
           realUsername = mapCredidUsername[reqId];
         }
-        attestations = database[realUsername].attestation
-        for( let i = 0 ; attestations && i < attestations.length ; i++ ){          
-          let dbId = attestations[i].credId         
-          if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
-            attestation = attestations[i];
-            break;
-          }            
+        if(realUsername){
+          attestations = database[realUsername].attestation
+          for( let i = 0 ; attestations && i < attestations.length ; i++ ){          
+            let dbId = attestations[i].credId         
+            if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
+              attestation = attestations[i];
+              break;           
+            }            
+          }
         }
-
+        
         if( !attestation ){
           let rtn = {
             'status': 'failed',
@@ -209,7 +211,7 @@ async function AppController(request, response) {
           registrationOptions.excludeCredentials = excludeCredentials
         }        
 
-        registrationOptions.user.id = userid;
+        registrationOptions.user.id = base64url.encode(userid);
         registrationOptions.user.name = username;
         registrationOptions.user.displayName = body.displayName?body.displayName:username;
 
@@ -219,7 +221,7 @@ async function AppController(request, response) {
           database[username] = {
             'name': username,
             'registered': false,
-            'id': registrationOptions.user.id,
+            'id': userid,//Record non base64 user id
             'attestation': []
           };
         }        
@@ -312,7 +314,11 @@ function equlsArrayBuffer(a, b){
 function isBase64(str) {  
   try {
     if (str ==='' || str.trim() ===''){ return false; }
-    return btoa(atob(str)) == str;
+    let ins = str.replace(/\-/g, "+").replace(/_/g, "/")
+    var ss= atob(ins)
+    ss=btoa(ss).replace(/\+/g, "-").replace(/\//g, "_").replaceAll("=", "")
+    return ss == str;
+    //return str.match(/^([A-Za-z0-9+/])*/g) || str.match(/^([A-Za-z0-9-_])*/g)
   } catch (err) {
     return false;
   }

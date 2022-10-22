@@ -1,2 +1,7 @@
 node_modules/
 .vscode/
+ssl/dqj_selfsigned_dqj-macpro.crt
+ssl/dqj_selfsigned_dqj-macpro.key
+ssl/dqj_selfsigned_mac.crt
+ssl/dqj_selfsigned_mac.key
+ssl/dqj-macpro.crt
