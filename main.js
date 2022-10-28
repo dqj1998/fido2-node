@@ -6,8 +6,6 @@ const fs        = require('fs');
 
 const { v4: uuidv4 } = require('uuid');
 
-//const port = 3000;
-//const server = http.createServer();
 const port = 443;
 const options = {
   key: fs.readFileSync('ssl/dqj_selfsigned_mac.key'),//dqj-macpro.key.pem'),
@@ -17,14 +15,22 @@ const server = https.createServer(options)
 
 const { Fido2Lib } = require("fido2-lib");
 
-const FIDO_RP_NAME = process.env.FIDO_RP_NAME || "mac.dqj-macpro.com FIDO Host";
+const registeredRps=["mac.dqj-macpro.com", "rp01", "rp02"]
+
+const DEFAULT_FIDO_RP_NAME = process.env.FIDO_RP_NAME || "mac.dqj-macpro.com";
 const FIDO_ORIGIN = process.env.FIDO_ORIGIN || "https://mac.dqj-macpro.com"+(port===80||port===443?"":":"+port);//"http://localhost"+(port===80||port===443?"":":"+port);
-let fido2lib = new Fido2Lib({
-  rpName: FIDO_RP_NAME,
+
+/*let fido2lib = new Fido2Lib({
+  rpId: DEFAULT_FIDO_RP_NAME,
   timeout: 300 * 1000 //ms
-});
+});*/
 
 let database = {};//use json as DB, all data will lost after restart program.
+
+registeredRps.forEach(element => {
+  database[element] = {}
+});
+
 let mapCredidUsername = {};//Link cred ids with usernames
 let sessions = {};
 
@@ -59,7 +65,10 @@ async function AppController(request, response) {
     
         //Client-side discoverable Credential does not pass username
 
-        if(username && username.length > 0 && (!database[username] || !database[username].registered)) {
+        let rpId=checkRpId(body)
+        if(null==rpId)return
+
+        if(username && username.length > 0 && (!database[rpId][username] || !database[rpId][username].registered)) {
           response.end(JSON.stringify({
             'status': 'failed',
             'message': `Username ${username} does not exist`
@@ -67,7 +76,8 @@ async function AppController(request, response) {
           return
         }
     
-        let authnOptions = await fido2lib.assertionOptions(body);
+        let fido2Lib =  getFido2Lib(rpId, body)
+        let authnOptions = await fido2Lib.assertionOptions(body);
         /* dqj: set by lib 
         if(!username){//Try discoverable 
           authnOptions["mediation"] = "conditional"
@@ -78,7 +88,7 @@ async function AppController(request, response) {
     
         let allowCredentials = [];
         if( username && username.length > 0 ){
-            for(let authr of database[username].attestation) {
+            for(let authr of database[rpId][username].attestation) {
               allowCredentials.push({
                 type: 'public-key',
                 id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
@@ -91,7 +101,8 @@ async function AppController(request, response) {
             
         sessions[challengeBase64] = {
           'challenge': authnOptions.challenge,
-          'username': username?username:""
+          'username': username?username:"",
+          'fido2lib': fido2Lib,
         };
     
         authnOptions.status = 'ok';
@@ -127,14 +138,17 @@ async function AppController(request, response) {
         }else if(mapCredidUsername[reqId]){//Client-side discoverable Credential process
           realUsername = mapCredidUsername[reqId];
         }
+
+        if(null==sessions[clientData.challenge].fido2lib)return
+
         if(realUsername){
-          attestations = database[realUsername].attestation
+          attestations = database[sessions[clientData.challenge].fido2lib.config.rpName][realUsername].attestation
           for( let i = 0 ; attestations && i < attestations.length ; i++ ){          
             let dbId = attestations[i].credId         
             if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
               attestation = attestations[i];
               break;           
-            }            
+            }
           }
         }
         
@@ -156,10 +170,10 @@ async function AppController(request, response) {
           factor: "either",
           publicKey: attestation.publickey,
           prevCounter: attestation.counter,
-          userHandle: database[realUsername].id
+          userHandle: database[cur_session.fido2lib.config.rpName][realUsername].id
         };    
         
-        let authnResult = await fido2lib.assertionResult(body, assertionExpectations);
+        let authnResult = await cur_session.fido2lib.assertionResult(body, assertionExpectations);
         console.log(authnResult);
     
         let rtn='';
@@ -182,16 +196,20 @@ async function AppController(request, response) {
       }else if(url.pathname === '/attestation/options'){
         const body = await loadJsonBody(request)
 
+        let rpId=checkRpId(body)
+        if(null==rpId)return
+
         let username = body.username;
 
         let userid;
-        if(database[username]) {
-          userid = database[username].id;
+        if(database[rpId][username]) {
+          userid = database[rpId][username].id;
         }else{
           userid = uuidv4();
         }
 
-        let registrationOptions = await fido2lib.attestationOptions();
+        let fido2Lib =  getFido2Lib(rpId, body)
+        let registrationOptions = await fido2Lib.attestationOptions();
         let challengeTxt = uuidv4()
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
         registrationOptions.challenge = challengeBase64//Array.from(new TextEncoder().encode(challengeTxt)) //base64url.encode(uuidv4())//use challenge as session id
@@ -199,9 +217,9 @@ async function AppController(request, response) {
         registrationOptions.authenticatorSelection = body.authenticatorSelection
 
         //Prevent register same authenticator
-        if(database[username] && database[username].attestation){
+        if(database[rpId][username] && database[rpId][username].attestation){
           let excludeCredentials = [];
-          for(let authr of database[username].attestation) {
+          for(let authr of database[rpId][username].attestation) {
             excludeCredentials.push({
                 type: 'public-key',
                 id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
@@ -217,8 +235,8 @@ async function AppController(request, response) {
 
         console.log(registrationOptions);
 
-        if(!database[username]){
-          database[username] = {
+        if(!database[rpId][username]){
+          database[rpId][username] = {
             'name': username,
             'registered': false,
             'id': userid,//Record non base64 user id
@@ -228,7 +246,8 @@ async function AppController(request, response) {
 
         sessions[challengeBase64] = {
           'challenge': registrationOptions.challenge,
-          'username': username
+          'username': username,
+          'fido2lib': fido2Lib
         };
 
         registrationOptions.status = 'ok';
@@ -254,19 +273,21 @@ async function AppController(request, response) {
         const cur_session = sessions[clientData.challenge]
         delete sessions[clientData.challenge]
 
+        if(null==cur_session.fido2lib)return
+
         let attestationExpectations = {
             challenge: cur_session.challenge,
             origin: FIDO_ORIGIN,
             factor: "either"
         };
         
-        let regResult = await fido2lib.attestationResult(body, attestationExpectations);
+        let regResult = await cur_session.fido2lib.attestationResult(body, attestationExpectations);
         console.log(regResult);
 
         const credId = regResult.authnrData.get('credId')
         const aaguid = buf2hex(regResult.authnrData.get('aaguid'))//No required info for reg/auth
         const counter = regResult.authnrData.get('counter');
-        database[cur_session.username].attestation.push({
+        database[cur_session.fido2lib.config.rpName][cur_session.username].attestation.push({
             publickey : regResult.authnrData.get('credentialPublicKeyPem'),
             counter : counter,
             fmt : regResult.authnrData.get('fmt'),
@@ -278,7 +299,7 @@ async function AppController(request, response) {
 
         let rtn={};
         if(regResult.audit.complete) {
-          database[cur_session.username].registered = true
+          database[cur_session.fido2lib.config.rpName][cur_session.username].registered = true
     
           rtn.status = 'ok',
           rtn.counter = counter
@@ -340,6 +361,39 @@ function stringfy(input) {
   else{
     return new TextDecoder().decode(new Uint8Array(input)) //new TextEncoder().encode(input)
   }
+}
+
+function getFido2Lib(rpId, reqBody){
+  let rp = DEFAULT_FIDO_RP_NAME
+  if(rpId && registeredRps.includes(rpId)){
+    rp = rpId
+  }
+
+  var opts = {
+    rpName: rp,
+    timeout: 300 * 1000 //ms
+  }
+
+  if(null!=reqBody){
+    if(reqBody.authenticatorSelection){
+      opts.authenticatorUserVerification=reqBody.authenticatorSelection.userVerification
+    }
+  }
+
+  let f2lib = new Fido2Lib(opts);
+
+  return f2lib
+}
+
+function checkRpId(reqBody){
+  if(reqBody.rp && reqBody.rp.id){
+    if(registeredRps.includes(reqBody.rp.id)){
+      return reqBody.rp.id
+    }else{
+      response.end({status: "error", msg:"No exist rp.id:"+reqBody.rp.id});
+      return null
+    }
+  } else return DEFAULT_FIDO_RP_NAME
 }
 
 async function loadJsonBody(request){

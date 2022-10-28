@@ -58,7 +58,7 @@
         return keys;
     }
 
-    function doAttestation(username, displayName) {
+    function doAttestation(username, displayName, rpId) {
         const attestationOptions = {
             username: username,
             displayName: displayName,
@@ -69,6 +69,10 @@
             },
             //attestation: "none",
         };
+
+        if(rpId && 0 < rpId.length){
+            attestationOptions.rp = {id: rpId}
+        }
 
         console.log("Attestation start");
         console.log(JSON.stringify(attestationOptions, null, 2));
@@ -141,14 +145,28 @@
         });
     }
 
-    function doAssertion(username = "") {
-        const authnOptions = {
-            username: username,
-            authenticatorSelection: {
-                //authenticatorAttachment: "platform",
-                userVerification: "preferred"
+    function doAssertion(username = "", rpId) {
+        var authnOptions
+        if(!username || ""==username){
+            authnOptions={
+                authenticatorSelection: {
+                    //authenticatorAttachment: "platform",
+                    userVerification: "discouraged"
+                }
             }
-        };
+        }else{
+            authnOptions = {
+                username: username,
+                authenticatorSelection: {
+                    //authenticatorAttachment: "platform",
+                    userVerification: "preferred"
+                }
+            };
+        }         
+
+        if(rpId && 0 < rpId.length){
+            authnOptions.rp = {id: rpId}
+        }
 
         fetch(fidoServerURL + "/assertion/options", {
             method: "POST",
@@ -231,14 +249,19 @@
     function regFIDO2(){
         var uid=checkUid();
         if(!uid)return;
-        if(isWebAuthnSupported())doAttestation(uid, 'User_'+uid);
+        if(isWebAuthnSupported())doAttestation(uid, 'User_'+uid, $('#rpid').val());
         else alert('Your browser does NOT support FIDO2');
     }
 
     function authFIDO2(){
         var uid=checkUid();
         if(!uid)return;
-        if(isWebAuthnSupported())doAssertion(uid);
+        if(isWebAuthnSupported())doAssertion(uid, $('#rpid').val());
+        else alert('Your browser does NOT support FIDO2');
+    }
+
+    function authFIDO2Dis(){
+        if(isWebAuthnSupported())doAssertion("", $('#rpid').val());
         else alert('Your browser does NOT support FIDO2');
     }
 
@@ -246,9 +269,11 @@
 </head>
 <body>
     <h1>FIDO2</h1>
+    <h4>rpId: <input id='rpid' name='rpid'></h4>
     <h4>User name: <input id='uid' name='uid'></h4>
     <hr>
     <button onclick="regFIDO2();">Reg FIDO2</button><br><br>
     <button onclick="authFIDO2();">Auth FIDO2</button><br><br>
+    <button onclick="authFIDO2Dis();">Auth FIDO2(Discovery)</button><br><br>
 </body>
 </html>
