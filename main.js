@@ -6,24 +6,21 @@ const fs        = require('fs');
 
 const { v4: uuidv4 } = require('uuid');
 
-const port = 443;
+require('dotenv').config();
+
+const port = process.env.PORT || 443;
+
 const options = {
-  key: fs.readFileSync('ssl/dqj_selfsigned_mac.key'),//dqj-macpro.key.pem'),
-  cert: fs.readFileSync('ssl/dqj_selfsigned_mac.crt')//dqj-macpro.crt')
+  key: fs.readFileSync(process.env.SSLKEY),
+  cert: fs.readFileSync(process.env.SSLCRT)
 };
 const server = https.createServer(options)
 
 const { Fido2Lib } = require("fido2-lib");
 
-const registeredRps=["mac.dqj-macpro.com", "rp01", "rp02"]
-
-const DEFAULT_FIDO_RP_NAME = process.env.FIDO_RP_NAME || "mac.dqj-macpro.com";
-const FIDO_ORIGIN = process.env.FIDO_ORIGIN || "https://mac.dqj-macpro.com"+(port===80||port===443?"":":"+port);//"http://localhost"+(port===80||port===443?"":":"+port);
-
-/*let fido2lib = new Fido2Lib({
-  rpId: DEFAULT_FIDO_RP_NAME,
-  timeout: 300 * 1000 //ms
-});*/
+const registeredRps=process.env.REGISTERED_RPs.split(",")
+const DEFAULT_FIDO_RPID = process.env.DEFAULT_FIDO_RPID
+const FIDO_ORIGIN = process.env.FIDO_ORIGIN
 
 let database = {};//use json as DB, all data will lost after restart program.
 
@@ -142,7 +139,7 @@ async function AppController(request, response) {
         if(null==sessions[clientData.challenge].fido2lib)return
 
         if(realUsername){
-          attestations = database[sessions[clientData.challenge].fido2lib.config.rpName][realUsername].attestation
+          attestations = database[sessions[clientData.challenge].fido2lib.config.rpId][realUsername].attestation
           for( let i = 0 ; attestations && i < attestations.length ; i++ ){          
             let dbId = attestations[i].credId         
             if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
@@ -167,10 +164,11 @@ async function AppController(request, response) {
         let assertionExpectations = {
           challenge: cur_session.challenge,
           origin: FIDO_ORIGIN,
+          rpId: cur_session.fido2lib.config.rpId,
           factor: "either",
           publicKey: attestation.publickey,
           prevCounter: attestation.counter,
-          userHandle: database[cur_session.fido2lib.config.rpName][realUsername].id
+          userHandle: database[cur_session.fido2lib.config.rpId][realUsername].id
         };    
         
         let authnResult = await cur_session.fido2lib.assertionResult(body, assertionExpectations);
@@ -278,6 +276,7 @@ async function AppController(request, response) {
         let attestationExpectations = {
             challenge: cur_session.challenge,
             origin: FIDO_ORIGIN,
+            rpId: cur_session.fido2lib.config.rpId,
             factor: "either"
         };
         
@@ -287,7 +286,7 @@ async function AppController(request, response) {
         const credId = regResult.authnrData.get('credId')
         const aaguid = buf2hex(regResult.authnrData.get('aaguid'))//No required info for reg/auth
         const counter = regResult.authnrData.get('counter');
-        database[cur_session.fido2lib.config.rpName][cur_session.username].attestation.push({
+        database[cur_session.fido2lib.config.rpId][cur_session.username].attestation.push({
             publickey : regResult.authnrData.get('credentialPublicKeyPem'),
             counter : counter,
             fmt : regResult.authnrData.get('fmt'),
@@ -299,7 +298,7 @@ async function AppController(request, response) {
 
         let rtn={};
         if(regResult.audit.complete) {
-          database[cur_session.fido2lib.config.rpName][cur_session.username].registered = true
+          database[cur_session.fido2lib.config.rpId][cur_session.username].registered = true
     
           rtn.status = 'ok',
           rtn.counter = counter
@@ -364,13 +363,13 @@ function stringfy(input) {
 }
 
 function getFido2Lib(rpId, reqBody){
-  let rp = DEFAULT_FIDO_RP_NAME
+  let rp = DEFAULT_FIDO_RPID
   if(rpId && registeredRps.includes(rpId)){
     rp = rpId
   }
 
   var opts = {
-    rpName: rp,
+    rpId: rp,
     timeout: 300 * 1000 //ms
   }
 
@@ -393,7 +392,7 @@ function checkRpId(reqBody){
       response.end({status: "error", msg:"No exist rp.id:"+reqBody.rp.id});
       return null
     }
-  } else return DEFAULT_FIDO_RP_NAME
+  } else return DEFAULT_FIDO_RPID
 }
 
 async function loadJsonBody(request){
