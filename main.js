@@ -10,6 +10,16 @@ require('dotenv').config();
 
 const port = process.env.PORT || 443;
 
+const mysql = require('mysql2');
+const mysql_pool = mysql.createPool({
+  connectionLimit : process.env.MYSQL_POOL_LIMIT || 10,
+  host: process.env.MYSQL_HOST || 'localhost',
+  database: process.env.MYSQL_DATABASE || 'fido2_node_db',
+  user: process.env.MYSQL_USER || 'root',
+  password: process.env.MYSQL_PASSWD || '',
+});
+
+
 const options = {
   key: fs.readFileSync(process.env.SSLKEY),
   cert: fs.readFileSync(process.env.SSLCRT)
@@ -17,6 +27,7 @@ const options = {
 const server = https.createServer(options)
 
 const { Fido2Lib } = require("fido2-lib");
+const { env } = require("process");
 
 const registeredRps=process.env.REGISTERED_RPs.split(",")
 const DEFAULT_FIDO_RPID = process.env.DEFAULT_FIDO_RPID
@@ -24,9 +35,13 @@ const FIDO_ORIGIN = process.env.FIDO_ORIGIN
 
 let database = {};//use json as DB, all data will lost after restart program.
 
-registeredRps.forEach(element => {
-  database[element] = {}
-});
+if('mem' == process.env.STORAGE_TYPE){
+  registeredRps.forEach(element => {
+    database[element] = {}
+  });
+}else if('mysql' == process.env.STORAGE_TYPE){
+  insertRps(registeredRps)
+}
 
 let mapCredidUsername = {};//Link cred ids with usernames
 let sessions = {};
@@ -65,7 +80,9 @@ async function AppController(request, response) {
         let rpId=checkRpId(body)
         if(null==rpId)return
 
-        if(username && username.length > 0 && (!database[rpId][username] || !database[rpId][username].registered)) {
+        let user = await getUserData(rpId, username)
+        //if(username && username.length > 0 && (!database[rpId][username] || !database[rpId][username].registered)) {
+        if(username && username.length > 0 && (!user || !user.registered)) {
           response.end(JSON.stringify({
             'status': 'failed',
             'message': `Username ${username} does not exist`
@@ -85,12 +102,13 @@ async function AppController(request, response) {
     
         let allowCredentials = [];
         if( username && username.length > 0 ){
-            for(let authr of database[rpId][username].attestation) {
-              allowCredentials.push({
-                type: 'public-key',
-                id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
-                transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']// can be overrided by client
-              })
+          let attestations = await getAttestationData(rpId, username)
+          for(let authr of attestations) {
+            allowCredentials.push({
+              type: 'public-key',
+              id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
+              transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']// can be overrided by client
+            })
           }
           authnOptions.allowCredentials = allowCredentials;
           console.log(authnOptions);
@@ -139,7 +157,7 @@ async function AppController(request, response) {
         if(null==sessions[clientData.challenge].fido2lib)return
 
         if(realUsername){
-          attestations = database[sessions[clientData.challenge].fido2lib.config.rpId][realUsername].attestation
+          attestations = await getAttestationData(sessions[clientData.challenge].fido2lib.config.rpId, realUsername)
           for( let i = 0 ; attestations && i < attestations.length ; i++ ){          
             let dbId = attestations[i].credId         
             if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
@@ -161,6 +179,7 @@ async function AppController(request, response) {
         const cur_session = sessions[clientData.challenge]
         delete sessions[clientData.challenge]
 
+        let user = await getUserData(cur_session.fido2lib.config.rpId, realUsername)
         let assertionExpectations = {
           challenge: cur_session.challenge,
           origin: FIDO_ORIGIN,
@@ -168,7 +187,7 @@ async function AppController(request, response) {
           factor: "either",
           publicKey: attestation.publickey,
           prevCounter: attestation.counter,
-          userHandle: database[cur_session.fido2lib.config.rpId][realUsername].id
+          userHandle: user.id
         };    
         
         let authnResult = await cur_session.fido2lib.assertionResult(body, assertionExpectations);
@@ -200,8 +219,9 @@ async function AppController(request, response) {
         let username = body.username;
 
         let userid;
-        if(database[rpId][username]) {
-          userid = database[rpId][username].id;
+        let user = await getUserData(rpId, username)
+        if(user) {
+          userid = user.id;
         }else{
           userid = uuidv4();
         }
@@ -215,9 +235,10 @@ async function AppController(request, response) {
         registrationOptions.authenticatorSelection = body.authenticatorSelection
 
         //Prevent register same authenticator
-        if(database[rpId][username] && database[rpId][username].attestation){
+        if(user){
+          user.attestation = await getAttestationData(rpId, username)
           let excludeCredentials = [];
-          for(let authr of database[rpId][username].attestation) {
+          for(let authr of user.attestation) {
             excludeCredentials.push({
                 type: 'public-key',
                 id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
@@ -233,13 +254,8 @@ async function AppController(request, response) {
 
         console.log(registrationOptions);
 
-        if(!database[rpId][username]){
-          database[rpId][username] = {
-            'name': username,
-            'registered': false,
-            'id': userid,//Record non base64 user id
-            'attestation': []
-          };
+        if(!user){
+          await putUserData(rpId, username, userid, registrationOptions.user.displayName, false);
         }        
 
         sessions[challengeBase64] = {
@@ -286,19 +302,15 @@ async function AppController(request, response) {
         const credId = regResult.authnrData.get('credId')
         const aaguid = buf2hex(regResult.authnrData.get('aaguid'))//No required info for reg/auth
         const counter = regResult.authnrData.get('counter');
-        database[cur_session.fido2lib.config.rpId][cur_session.username].attestation.push({
-            publickey : regResult.authnrData.get('credentialPublicKeyPem'),
-            counter : counter,
-            fmt : regResult.authnrData.get('fmt'),
-            credId : new Uint8Array(credId),
-            aaguid : aaguid
-        });
+        await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
+          regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
+          new Uint8Array(credId), aaguid);
         
         mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
 
         let rtn={};
         if(regResult.audit.complete) {
-          database[cur_session.fido2lib.config.rpId][cur_session.username].registered = true
+          await setRegistered(cur_session.fido2lib.config.rpId, cur_session.username, true)         
     
           rtn.status = 'ok',
           rtn.counter = counter
@@ -408,4 +420,255 @@ async function loadJsonBody(request){
   console.log(body);
 
   return body;
+}
+
+//Storage methods
+async function insertRps(registeredRps){//only add new rps, does not delete from table
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_domain from registered_rps where deleted is null',
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      var newRps=registeredRps
+      results.forEach(element => {
+        if(newRps.includes(element.rp_domain)){
+          newRps = newRps.filter(item => !item.match(element.rp_domain));
+        }
+      });
+    
+      for (const element of newRps) {
+        const results = await new Promise((resolve, reject) => {
+          connection.query('INSERT into registered_rps( rp_domain ) values(?)', 
+              [element],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              });
+        });
+      }
+    }catch (err) {      
+      console.log('DB err'+err)
+    } finally {
+      connection.release()
+    }
+  }
+}
+
+async function getUserData(rpId, username){
+  if('mem'==process.env.STORAGE_TYPE){
+    return database[rpId][username]
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('SELECT user_id, username, displayname, registered '+
+            ' from registered_rps p, registered_users u ' +
+            ' where p.deleted is null and u.deleted is null ' +
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<results.length){
+        return {
+          id:results[0].user_id,
+          displayname:results[0].displayname,
+          registered:results[0].registered 
+        }        
+      }else return null
+    }catch (err) {      
+      console.log('DB err'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+}
+
+async function getAttestationData(rpId, username){
+  if('mem'==process.env.STORAGE_TYPE){
+    return database[rpId][username].attestation
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('SELECT public_key, counter, fmt, aaguid, credid_base64 '+
+            ' from registered_rps p, registered_users u, attestations t ' +
+            ' where p.deleted is null and u.deleted is null and t.deleted is null ' +
+            ' and p.rp_id=u.rp_id and t.user_id=u.user_id '+
+            ' and p.rp_domain=? and u.username=?', [rpId, username],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      var rtn=[]
+      if(0<results.length){
+        results.forEach(element => {          
+          rtn.push({
+            publickey:element.public_key,
+            counter:element.counter,
+            fmt:element.fmt,
+            aaguid:element.aaguid,
+            credId:base64url.toBuffer(element.credid_base64)
+          })
+        });
+      }
+      return rtn
+    }catch (err) {      
+      console.log('DB err'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+}
+
+async function putUserData(rpId, username, userid, displayname, registered){
+  if('mem'==process.env.STORAGE_TYPE){
+    database[rpId][username]={
+      'displayname': displayname,
+      'registered': registered,
+      'id': userid,//Record non base64 user id
+      'attestation': []
+    }
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const ipid_result = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_id from registered_rps where deleted is null and rp_domain=? ', [rpId],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<ipid_result.length){
+        const results = await new Promise((resolve, reject) => {
+          connection.query('INSERT into registered_users( rp_id, user_id, username, displayname, registered ) values(?,?,?,?,?) ', 
+              [ipid_result[0].rp_id, userid, username, displayname, registered],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+      }
+      
+    }catch (err) {      
+      console.log('DB err'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+}
+
+async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid){
+  if('mem'==process.env.STORAGE_TYPE){
+    database[rpId][username].attestation.push({
+      publickey: publickey,
+      counter: counter,
+      fmt: counter,
+      credId: credId,
+      aaguid: aaguid
+    })
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const result_userid = await new Promise((resolve, reject) => {
+        connection.query('SELECT user_id from registered_rps p, registered_users u ' +
+            ' where p.deleted is null and u.deleted is null ' +
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<result_userid.length){
+        const results = await new Promise((resolve, reject) => {
+          connection.query('INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid ) values(?,?,?,?,?,?) ', 
+              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+      }
+    }catch (err) {  
+      console.log('DB err'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+}
+
+async function setRegistered(rpId, username, registered){
+  if('mem'==process.env.STORAGE_TYPE){
+    database[rpId][username].registered = registered
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('update registered_users u set registered=? where u.deleted is null and '+
+            ' username=? and rp_id=(select rp_id from registered_rps where deleted is null and rp_domain=?) ', 
+            [registered, username, rpId],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+    }catch (err) {      
+      console.log('DB err'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }  
 }
