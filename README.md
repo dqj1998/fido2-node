@@ -20,7 +20,7 @@ Stoarge type is set by STORAGE_TYPE in .env
 ## mem
 Memory stoarge. All data lost when restart. Good for test with clients
 
-## MySQL
+## mysql
 Save data in a mysql database. REGISTERED_RPs of .env will be inserted into database if tehy aren't in datbase yet when start.
 But never delete rps from database according to REGISTERED_RPs.
 
