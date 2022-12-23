@@ -4,9 +4,12 @@ const base64url = require('base64url');
 const crypto    = require('crypto');
 const fs        = require('fs');
 
-const { v4: uuidv4 } = require('uuid');
-
 require('dotenv').config();
+
+const { v4: uuidv4 } = require('uuid');
+//const { Fido2Lib } = require("fido2-lib");
+
+const { env } = require("process");
 
 const port = process.env.PORT || 443;
 
@@ -25,9 +28,6 @@ const options = {
   cert: fs.readFileSync(process.env.SSLCRT)
 };
 const server = https.createServer(options)
-
-const { Fido2Lib } = require("fido2-lib");
-const { env } = require("process");
 
 const registeredRps=process.env.REGISTERED_RPs.split(",")
 const DEFAULT_FIDO_RPID = process.env.DEFAULT_FIDO_RPID
@@ -391,9 +391,9 @@ function getFido2Lib(rpId, reqBody){
     }
   }
 
-  let f2lib = new Fido2Lib(opts);
+  let f2lib = require('./fido2-node-lib/main'); //new Fido2Lib(opts);
 
-  return f2lib
+  return new f2lib(opts)
 }
 
 function checkRpId(reqBody){

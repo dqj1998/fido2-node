@@ -2,7 +2,6 @@
   "dependencies": {
     "base64url": "^3.0.1",
     "dotenv": "^16.0.3",
-    "fido2-lib": "^3.2.5",
     "mysql2": "^2.3.3",
     "uuid": "^8.3.2"
   }
