@@ -131,10 +131,11 @@ class Fido2Lib {
 		if (
 			this.config.attestation !== "direct" &&
 			this.config.attestation !== "indirect" &&
-			this.config.attestation !== "none"
+			this.config.attestation !== "none" &&
+			this.config.attestation !== "enterprise"
 		) {
 			throw new TypeError(
-				"expected attestation to be 'direct', 'indirect', or 'none', got: " +
+				"expected attestation to be 'direct', 'indirect', 'enterprise', or 'none', got: " +
 					this.config.attestation,
 			);
 		}

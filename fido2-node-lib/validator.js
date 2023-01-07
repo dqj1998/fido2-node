@@ -638,7 +638,8 @@ async function validateUserHandle() {
 	}
 
 	userHandle = coerceToBase64Url(userHandle, "userHandle");
-	let expUserHandle = this.expectations.get("userHandle");
+	//let expUserHandle = this.expectations.get("userHandle");
+	let expUserHandle = coerceToBase64Url(this.expectations.get("userHandle"), "userHandle")
 	if (typeof userHandle === "string" &&
 		userHandle === expUserHandle) {
 		this.audit.journal.add("userHandle");

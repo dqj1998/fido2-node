@@ -24,4 +24,11 @@ Memory stoarge. All data lost when restart. Good for test with clients
 Save data in a mysql database. REGISTERED_RPs of .env will be inserted into database if they aren't in database yet when start.
 But never delete rps from database according to REGISTERED_RPs.
 
+# Enterprise authenticator
+Support aaguid checking for enterprise attestation.
+1. Register enterpise rpids and aaguids in env file of server by ENTERPRISE_RPs and ENTERPRISE_AAGUIDs
+2. Call setPlatformAuthenticatorAAGUID and addEnterpriseRPIds on SDK side
+
+* The aaguids of ENTERPRISE_AAGUIDs can be Array so that we can support the seamless upgrade of aaguids.
+
  

@@ -214,9 +214,10 @@
                     authenticatorData: _toBase64URL(btoa(_bufferToString(resp.response.authenticatorData))),
                     clientDataJSON: _toBase64URL(btoa(_bufferToString(resp.response.clientDataJSON))),
                     signature: _toBase64URL(btoa(_bufferToString(resp.response.signature))),
-                    userHandle: _toBase64URL(btoa(_bufferToString(resp.response.userHandle)))
+                    userHandle: _toBase64URL(btoa(_bufferToString(resp.response.userHandle))) //_toBase64URL(btoa(_bufferToString(resp.response.userHandle)))
                     }
                 };
+                //alert(atob(authRequest.response.userHandle))
                 return fetch(fidoServerURL + "/assertion/result", {
                     method: "POST",
                     cache: "no-cache",

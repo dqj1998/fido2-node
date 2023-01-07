@@ -33,6 +33,21 @@ const registeredRps=process.env.REGISTERED_RPs.split(",")
 const DEFAULT_FIDO_RPID = process.env.DEFAULT_FIDO_RPID
 const FIDO_ORIGIN = process.env.FIDO_ORIGIN
 
+var enterpriseRps=[]
+let enterpriseAaguids = new Map();
+if(process.env.ENTERPRISE_RPs && process.env.ENTERPRISE_AAGUIDs){
+  enterpriseRps=process.env.ENTERPRISE_RPs.split(",")
+
+  const the_aaguids=process.env.ENTERPRISE_AAGUIDs.split(",")
+  the_aaguids.forEach(element => {
+    const rps = element.split(":")
+    if(1<rps.length){
+      const guids = rps[1].split("|")
+      enterpriseAaguids.set(rps[0], guids)
+    }
+  });
+}
+
 let database = {};//use json as DB, all data will lost after restart program.
 
 if('mem' == process.env.STORAGE_TYPE){
@@ -130,8 +145,8 @@ async function AppController(request, response) {
         
         body.response.authenticatorData = new Uint8Array(base64url.toBuffer(body.response.authenticatorData)).buffer; //bufferKeepBase64(body.response.authenticatorData)
         body.response.signature = new Uint8Array(base64url.toBuffer(body.response.signature)).buffer; //bufferKeepBase64((body.response.signature))
-        body.response.userHandle = stringfy(body.response.userHandle);// new TextDecoder().decode(new Uint8Array(filterBase64(body.response.userHandle)).buffer)   
-
+        body.response.userHandle = base64url.toBuffer(body.response.userHandle); //new TextDecoder().decode(new Uint8Array(base64url.toBuffer(body.response.userHandle)).buffer)   
+        body.response.userHandle = stringfy(body.response.userHandle)//new TextDecoder().decode(body.response.userHandle)
         body.response.clientDataJSON = new Uint8Array(base64url.toBuffer(body.response.clientDataJSON)).buffer; //bufferKeepBase64(body.response.clientDataJSON)
     
         let attestation = null;
@@ -252,6 +267,10 @@ async function AppController(request, response) {
         registrationOptions.user.name = username;
         registrationOptions.user.displayName = body.displayName?body.displayName:username;
 
+        if(fido2Lib.config.attestation){
+          registrationOptions.attestation = fido2Lib.config.attestation
+        }
+
         console.log(registrationOptions);
 
         if(!user){
@@ -300,26 +319,39 @@ async function AppController(request, response) {
         console.log(regResult);
 
         const credId = regResult.authnrData.get('credId')
-        const aaguid = buf2hex(regResult.authnrData.get('aaguid'))//No required info for reg/auth
-        const counter = regResult.authnrData.get('counter');
-        await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
-          regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
-          new Uint8Array(credId), aaguid);
-        
-        mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
+        const aaguid = buf2hex(regResult.authnrData.get('aaguid'))
 
         let rtn={};
-        if(regResult.audit.complete) {
-          await setRegistered(cur_session.fido2lib.config.rpId, cur_session.username, true)         
-    
-          rtn.status = 'ok',
-          rtn.counter = counter
-          rtn.credId = Array.from(new Uint8Array(regResult.authnrData.get('credId')))
-        } else {
-          rtn.status ='failed',
-          rtn.message = 'Can not authenticate signature!'
+
+        const aaguidtxt = String.fromCharCode.apply("", new Uint8Array(regResult.authnrData.get('aaguid')))
+        if(cur_session.fido2lib.config.attestation == "enterprise"){
+          const guids = enterpriseAaguids.get(cur_session.fido2lib.config.rpId)
+          if(!guids || !guids.includes(aaguidtxt) ){
+            rtn.status ='failed',
+            rtn.message = 'Unregistered enterprise authenticator aaguid!'
+          }
         }
 
+        if(!rtn.status){
+          const counter = regResult.authnrData.get('counter');
+          await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
+            regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
+            new Uint8Array(credId), aaguid);
+          
+          mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
+          
+          if(regResult.audit.complete) {
+            await setRegistered(cur_session.fido2lib.config.rpId, cur_session.username, true)         
+      
+            rtn.status = 'ok',
+            rtn.counter = counter
+            rtn.credId = Array.from(new Uint8Array(regResult.authnrData.get('credId')))
+          } else {
+            rtn.status ='failed',
+            rtn.message = 'Can not authenticate signature!'
+          }  
+        }
+        
         response.end(JSON.stringify(rtn));
       }
     }catch(ex){
@@ -383,6 +415,10 @@ function getFido2Lib(rpId, reqBody){
   var opts = {
     rpId: rp,
     timeout: 300 * 1000 //ms
+  }
+
+  if(enterpriseRps.includes(rp)){
+    opts.attestation = "enterprise"
   }
 
   if(null!=reqBody){
