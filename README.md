@@ -14,6 +14,8 @@ Support aaguid checking for enterprise attestation.
 1. Register enterpise rpids and aaguids by domain.json file
 2. Call setPlatformAuthenticatorAAGUID and addEnterpriseRPIds on SDK side
 
+* The enterprise_aaguids of domain.json is Array so that we can support the seamless upgrade of aaguids.
+
 # Extension Features
 
 ## Multiple rp ids
@@ -27,8 +29,6 @@ Memory stoarge. All data lost when restart. Good for test with clients
 
 ## mysql
 Save data in a mysql database.
-
-* The enterprise_aaguids of domain.json is Array so that we can support the seamless upgrade of aaguids.
 
 # Management methods
 
