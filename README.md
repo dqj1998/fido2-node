@@ -41,10 +41,13 @@ Domain settings, loaded when server start, and can be changed and reloaded by HT
 ## HTTPS APIs
 
 [POST /mng/domain/conf] set and/or delete domain configs
+
 Body is JSON with MNG_TOKEN. Refer the set_domain.json in examples folder
 
 [POST /mng/domain/rollback] rollback domain config to pervious one
+
 Body is JSON with MNG_TOKEN:
+
 {
     "MNG_TOKEN":"<The token set in server .env file>"
 }
