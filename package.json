@@ -1,8 +1,15 @@
 {
   "dependencies": {
+    "@hexagon/base64": "^1.1.25",
+    "@peculiar/webcrypto": "^1.4.1",
     "base64url": "^3.0.1",
+    "cbor-x": "^1.5.1",
     "dotenv": "^16.0.3",
+    "jose": "^4.11.2",
+    "log4js": "^6.7.1",
     "mysql2": "^2.3.3",
+    "pkijs": "^3.0.13",
+    "tldts": "^5.7.104",
     "uuid": "^8.3.2"
   }
 }

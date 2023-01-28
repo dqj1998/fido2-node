@@ -3,6 +3,7 @@ const https = require("https");
 const base64url = require('base64url');
 const crypto    = require('crypto');
 const fs        = require('fs');
+const log4js    = require('log4js');
 
 require('dotenv').config();
 
@@ -10,6 +11,10 @@ const { v4: uuidv4 } = require('uuid');
 //const { Fido2Lib } = require("fido2-lib");
 
 const { env } = require("process");
+
+log4js.configure('log4js-conf.json');
+const logger = log4js.getLogger();
+//logger.level = process.env.LOG4JS_LEVEL;
 
 const port = process.env.PORT || 443;
 
@@ -22,41 +27,24 @@ const mysql_pool = mysql.createPool({
   password: process.env.MYSQL_PASSWD || '',
 });
 
-
 const options = {
   key: fs.readFileSync(process.env.SSLKEY),
   cert: fs.readFileSync(process.env.SSLCRT)
 };
 const server = https.createServer(options)
 
-const registeredRps=process.env.REGISTERED_RPs.split(",")
 const DEFAULT_FIDO_RPID = process.env.DEFAULT_FIDO_RPID
 const FIDO_ORIGIN = process.env.FIDO_ORIGIN
 
-var enterpriseRps=[]
-let enterpriseAaguids = new Map();
-if(process.env.ENTERPRISE_RPs && process.env.ENTERPRISE_AAGUIDs){
-  enterpriseRps=process.env.ENTERPRISE_RPs.split(",")
+const DOMAIN_JSON_FN = 'domain.json';
+var domains_conf
+var registeredRps
+var enterpriseRps
+var enterpriseAaguids;
 
-  const the_aaguids=process.env.ENTERPRISE_AAGUIDs.split(",")
-  the_aaguids.forEach(element => {
-    const rps = element.split(":")
-    if(1<rps.length){
-      const guids = rps[1].split("|")
-      enterpriseAaguids.set(rps[0], guids)
-    }
-  });
-}
+let database = new Map();//use json as DB, all data will lost after restart program.
 
-let database = {};//use json as DB, all data will lost after restart program.
-
-if('mem' == process.env.STORAGE_TYPE){
-  registeredRps.forEach(element => {
-    database[element] = {}
-  });
-}else if('mysql' == process.env.STORAGE_TYPE){
-  insertRps(registeredRps)
-}
+loadDomains();
 
 let mapCredidUsername = {};//Link cred ids with usernames
 let sessions = {};
@@ -64,8 +52,41 @@ let sessions = {};
 server.on('request', AppController);
 
 server.listen(port);
-console.log(`Started server: ${port}`);
+//console.log(`Started server: ${port}`);
+logger.info(`Started server: ${port}`);
 
+function loadDomains(){
+  domains_conf = JSON.parse(fs.readFileSync(DOMAIN_JSON_FN, 'utf8'));
+  
+  registeredRps = [];
+  enterpriseRps = [];
+  enterpriseAaguids = new Map();
+
+  domains_conf.domains.forEach(element => {  
+    registeredRps.push(element.domain)
+    if(element.enterprise){
+      enterpriseRps.push(element.domain)
+
+      if(element.enterprise_aaguids){
+        enterpriseAaguids.set(element.domain, element.enterprise_aaguids)
+      }
+    }
+  });
+
+  if('mem' == process.env.STORAGE_TYPE){
+    registeredRps.forEach(element => {
+      if(!database.get(element)) database.set(element, new Map());      
+    });
+    for (const key of database.keys()) {
+      if( 0 > registeredRps.indexOf(key) ){
+        database.delete(key)
+      }
+    }
+  }else if('mysql' == process.env.STORAGE_TYPE){
+    setRps(registeredRps);
+  }
+
+}
 
 async function AppController(request, response) {
   const url = new URL(request.url, `https://${request.headers.host}`)
@@ -92,11 +113,10 @@ async function AppController(request, response) {
     
         //Client-side discoverable Credential does not pass username
 
-        let rpId=checkRpId(body)
+        let rpId=checkRpId(body, response)
         if(null==rpId)return
 
         let user = await getUserData(rpId, username)
-        //if(username && username.length > 0 && (!database[rpId][username] || !database[rpId][username].registered)) {
         if(username && username.length > 0 && (!user || !user.registered)) {
           response.end(JSON.stringify({
             'status': 'failed',
@@ -126,7 +146,8 @@ async function AppController(request, response) {
             })
           }
           authnOptions.allowCredentials = allowCredentials;
-          console.log(authnOptions);
+          //console.log(authnOptions);
+          logger.debug(authnOptions);
         }
             
         sessions[challengeBase64] = {
@@ -206,7 +227,8 @@ async function AppController(request, response) {
         };    
         
         let authnResult = await cur_session.fido2lib.assertionResult(body, assertionExpectations);
-        console.log(authnResult);
+        //console.log(authnResult);
+        logger.debug(authnResult)
     
         let rtn='';
         if(authnResult.audit.complete) {
@@ -228,7 +250,7 @@ async function AppController(request, response) {
       }else if(url.pathname === '/attestation/options'){
         const body = await loadJsonBody(request)
 
-        let rpId=checkRpId(body)
+        let rpId=checkRpId(body, response)
         if(null==rpId)return
 
         let username = body.username;
@@ -271,7 +293,8 @@ async function AppController(request, response) {
           registrationOptions.attestation = fido2Lib.config.attestation
         }
 
-        console.log(registrationOptions);
+        //console.log(registrationOptions);
+        logger.debug(registrationOptions);
 
         if(!user){
           await putUserData(rpId, username, userid, registrationOptions.user.displayName, false);
@@ -316,7 +339,8 @@ async function AppController(request, response) {
         };
         
         let regResult = await cur_session.fido2lib.attestationResult(body, attestationExpectations);
-        console.log(regResult);
+        logger.debug(regResult);
+        
 
         const credId = regResult.authnrData.get('credId')
         const aaguid = buf2hex(regResult.authnrData.get('aaguid'))
@@ -354,6 +378,72 @@ async function AppController(request, response) {
         
         response.end(JSON.stringify(rtn));
       }
+      // ====== Management methods ======
+      // There are json examples in examples folder
+      else if( url.pathname.startsWith('/mng/') ){
+        const body = await loadJsonBody(request)
+        if(body.MNG_TOKEN && body.MNG_TOKEN==process.env.MNG_TOKEN){
+          if( url.pathname == '/mng/domain/conf' ){
+            //backup json file
+            const backupFileName =  DOMAIN_JSON_FN + Date.now();
+            fs.copyFileSync(DOMAIN_JSON_FN, backupFileName);
+            logger.info('Backuped ' + DOMAIN_JSON_FN + ' to ' + backupFileName);
+
+            domains_conf.backupfile = backupFileName;
+
+            if(body.del){//Del domains first
+              body.del.forEach(element => {
+                for (let i = 0; i < domains_conf.domains.length; ++i) {
+                  if( element == domains_conf.domains[i].domain){
+                    domains_conf.domains.splice(i, 1);
+                    i--;
+                  }
+                }
+              });
+            }
+
+            if(body.set){//Set domains
+              body.set.forEach(element => {
+                for (let i = 0; i < domains_conf.domains.length; ++i) {
+                  if( element.domain == domains_conf.domains[i].domain){
+                    domains_conf.domains[i]=element;
+                  }
+                }
+              });
+            }
+
+            //Write new json
+            fs.unlinkSync(DOMAIN_JSON_FN);
+            fs.writeFileSync(DOMAIN_JSON_FN, JSON.stringify(domains_conf), 'utf8');
+            logger.info('Created new ' + DOMAIN_JSON_FN);
+
+            loadDomains();
+            
+            const rtn = {status:'OK'}
+            response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/domain/rollback' ){
+            var rtn
+            if(domains_conf.backupfile && fs.existsSync(domains_conf.backupfile)){
+              fs.unlinkSync(DOMAIN_JSON_FN);
+              fs.copyFileSync(domains_conf.backupfile, DOMAIN_JSON_FN);
+              fs.unlinkSync(domains_conf.backupfile);
+
+              loadDomains();
+
+              rtn = {status:'OK'}
+            }else{
+              rtn = {status:'error'}
+              logger.warn('Backup file does not exist:' + (domains_conf.backupFileName?domains_conf.backupFileName:'null'));
+            }
+            
+            response.end(JSON.stringify(rtn));
+          }          
+        }else{
+          logger.warn('Somebody tried to access mng path:('+request.socket.remoteAddress+') with token='+
+              (body.MNG_TOKEN?body.MNG_TOKEN:'null'));
+          response.end("");
+        }        
+      }      
     }catch(ex){
       response.end(ex.message);
     }
@@ -432,12 +522,18 @@ function getFido2Lib(rpId, reqBody){
   return new f2lib(opts)
 }
 
-function checkRpId(reqBody){
+function checkRpId(reqBody, response){
   if(reqBody.rp && reqBody.rp.id){
     if(registeredRps.includes(reqBody.rp.id)){
       return reqBody.rp.id
     }else{
-      response.end({status: "error", msg:"No exist rp.id:"+reqBody.rp.id});
+      response.end(
+        JSON.stringify({
+          'status': 'failed',
+          'message': `No exist rp.id: ${reqBody.rp.id}`
+        })
+      );
+        //JSON.stringify({"status": "failed", "message":"No exist rp.id:"+reqBody.rp.id}));
       return null
     }
   } else return DEFAULT_FIDO_RPID
@@ -453,13 +549,13 @@ async function loadJsonBody(request){
   const bodytxt = Buffer.concat(buffers).toString();
 
   const body = JSON.parse(bodytxt);
-  console.log(body);
+  logger.debug(body);
 
   return body;
 }
 
 //Storage methods
-async function insertRps(registeredRps){//only add new rps, does not delete from table
+async function setRps(registeredRps){
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {
@@ -476,10 +572,13 @@ async function insertRps(registeredRps){//only add new rps, does not delete from
               resolve(results)
             })
       })
-      var newRps=registeredRps
+      var newRps = registeredRps
+      var delRps = []
       results.forEach(element => {
         if(newRps.includes(element.rp_domain)){
           newRps = newRps.filter(item => !item.match(element.rp_domain));
+        }else{
+          delRps.push(element.rp_domain)          
         }
       });
     
@@ -493,8 +592,18 @@ async function insertRps(registeredRps){//only add new rps, does not delete from
               });
         });
       }
+      for (const element of delRps) {
+        const results = await new Promise((resolve, reject) => {
+          connection.query('update registered_rps set deleted=NOW() where rp_domain =?', 
+              [element],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+      }
     }catch (err) {      
-      console.log('DB err'+err)
+      logger.error('DB err'+err)
     } finally {
       connection.release()
     }
@@ -503,7 +612,7 @@ async function insertRps(registeredRps){//only add new rps, does not delete from
 
 async function getUserData(rpId, username){
   if('mem'==process.env.STORAGE_TYPE){
-    return database[rpId][username]
+    return database.get(rpId).get(username)
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {
@@ -531,18 +640,18 @@ async function getUserData(rpId, username){
         }        
       }else return null
     }catch (err) {      
-      console.log('DB err'+err)
+      logger.error('DB err'+err)
     } finally {
       connection.release()
     }
   }else{
-    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }
 }
 
 async function getAttestationData(rpId, username){
   if('mem'==process.env.STORAGE_TYPE){
-    return database[rpId][username].attestation
+    return database.get(rpId).get(username).attestation
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {
@@ -577,23 +686,23 @@ async function getAttestationData(rpId, username){
       }
       return rtn
     }catch (err) {      
-      console.log('DB err'+err)
+      logger.error('DB err'+err)
     } finally {
       connection.release()
     }
   }else{
-    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }
 }
 
 async function putUserData(rpId, username, userid, displayname, registered){
   if('mem'==process.env.STORAGE_TYPE){
-    database[rpId][username]={
+    database.get(rpId).set(username,{
       'displayname': displayname,
       'registered': registered,
       'id': userid,//Record non base64 user id
       'attestation': []
-    }
+    });
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {
@@ -619,21 +728,20 @@ async function putUserData(rpId, username, userid, displayname, registered){
                 resolve(results)
               })
         })
-      }
-      
-    }catch (err) {      
-      console.log('DB err'+err)
+      }      
+    }catch (err) {
+      logger.error('DB err'+err)
     } finally {
       connection.release()
     }
   }else{
-    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }
 }
 
 async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid){
   if('mem'==process.env.STORAGE_TYPE){
-    database[rpId][username].attestation.push({
+    database.get(rpId).get(username).attestation.push({
       publickey: publickey,
       counter: counter,
       fmt: counter,
@@ -669,18 +777,18 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
         })
       }
     }catch (err) {  
-      console.log('DB err'+err)
+      logger.error('DB err'+err)
     } finally {
       connection.release()
     }
   }else{
-    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }
 }
 
 async function setRegistered(rpId, username, registered){
   if('mem'==process.env.STORAGE_TYPE){
-    database[rpId][username].registered = registered
+    database.get(rpId).get(username).registered = registered
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {
@@ -700,11 +808,11 @@ async function setRegistered(rpId, username, registered){
             })
       })
     }catch (err) {      
-      console.log('DB err'+err)
+      logger.error('DB err'+err)
     } finally {
       connection.release()
     }
   }else{
-    console.log('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }  
 }

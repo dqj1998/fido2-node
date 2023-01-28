@@ -1,0 +1,16 @@
+{
+    "MNG_TOKEN":"anyVeryLongTextabcdefgHijk988663",
+    "del":["rp03.abc.com"],
+    "set":[
+        {
+            "domain": "rp01.abc.com",
+            "enterprise": true,
+            "enterprise_aaguids":["aaguid_test_0000", "aaguid_test_0001"]
+        },
+        {
+            "domain": "rp02.def.com",
+            "enterprise": true,
+            "enterprise_aaguids":["aaguid_test_0000"]
+        }
+    ]
+}

@@ -1,0 +1,15 @@
+{
+    "appenders": {
+      "system": 
+      { 
+        "type": "file", 
+        "filename": "logs/fido2_node.log", 
+        "maxLogSize": 10000000, 
+        "backups": 100,
+        "layout": { "type": "pattern", "pattern": "%d[%p]%m" }
+      }
+    },
+    "categories": {
+      "default": { "appenders": ["system"], "level": "debug" }
+    }
+}

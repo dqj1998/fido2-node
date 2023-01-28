@@ -1,0 +1,22 @@
+{
+    "domains":[
+        {
+            "domain": "mac.dqj-macpro.com",
+            "enterprise": false
+        },
+        {
+            "domain": "rp01.abc.com",
+            "enterprise": true,
+            "enterprise_aaguids":["aaguid_test_0000"]
+        },
+        {
+            "domain": "rp02.def.com",
+            "enterprise": true,
+            "enterprise_aaguids":["aaguid_test_0000", "aaguid_test_0001"]
+        },
+        {
+            "domain": "rp03.abc.com",
+            "enterprise": false
+        }
+    ]
+}
