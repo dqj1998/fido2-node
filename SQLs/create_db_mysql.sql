@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS `attestations` (
     `fmt` varchar(16) NOT NULL,
     `aaguid` varchar(36) NOT NULL,    
     `credid_base64` text NOT NULL,
+    `unique_device_id` char(36),
     `created` DATETIME DEFAULT CURRENT_TIMESTAMP,
     `deleted` DATETIME DEFAULT NULL,
     PRIMARY KEY (`attest_id`)

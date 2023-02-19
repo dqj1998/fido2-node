@@ -540,6 +540,14 @@ async function validateAaguid() {
 	return true;
 }
 
+async function validateExtensions() {
+	let extensions = this.authnrData.get("extensions");
+
+	if(extensions)this.audit.journal.add("extensions");
+
+	return true;
+}
+
 async function validateCredId() {
 	let credId = this.authnrData.get("credId");
 	let credIdLen = this.authnrData.get("credIdLen");
@@ -719,6 +727,7 @@ function attach(o) {
 		validateAssertionSignature,
 		validateRpIdHash,
 		validateAaguid,
+		validateExtensions,
 		validateCredId,
 		validatePublicKey,
 		validateFlags,

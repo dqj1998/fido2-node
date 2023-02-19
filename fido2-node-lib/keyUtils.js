@@ -240,6 +240,8 @@ class PublicKey {
 		 */
 		this._key = undefined;
 
+		this._extensions = undefined;
+
 		const theUtils = require("./utils.js")
 		coerceToArrayBuffer = theUtils.coerceToArrayBuffer
 		coerceToBase64Url = theUtils.coerceToBase64Url
@@ -412,7 +414,7 @@ class PublicKey {
 	 * @param {object} cose - COSE data
 	 * @return {Promise<PublicKey>} - Returns itself for chaining
 	 */
-	async fromCose(cose) {
+	async fromCose(cose, extensions) {
 		if (typeof cose !== "object") {
 			throw new TypeError(
 				"'cose' argument must be an object, probably an Buffer conatining valid COSE",
@@ -423,7 +425,8 @@ class PublicKey {
 
 		let parsedCose;
 		try {
-			parsedCose = tools.cbor.decode(new Uint8Array(cose));
+			//parsedCose = tools.cbor.decode(new Uint8Array(cose));
+			parsedCose = tools.cbor.decodeMultiple(new Uint8Array(cose));			
 		} catch (err) {
 			throw new Error(
 				"couldn't parse authenticator.authData.attestationData CBOR: " +
@@ -439,12 +442,13 @@ class PublicKey {
 		const extraMap = new Map();
 		const retKey = {};
 		// parse main COSE labels
-		for (const kv of coseMap) {
-			const key = kv[0].toString();
-			let value = kv[1].toString();
+		const coseVal = coseMap.get('0');
+		for (const key of Object.keys(coseVal)) {
+			let value = coseVal[key];
 
 			if (!coseLabels[key]) {
-				extraMap.set(kv[0], kv[1]);
+				//extraMap.set(kv[0], kv[1]);
+				extraMap.set(key, value);
 				continue;
 			}
 
@@ -486,6 +490,43 @@ class PublicKey {
 		retKey.alg = algToJWKAlg[retKey.alg];
 
 		await this.fromJWK(retKey, true);
+
+		if(extensions && coseMap.get('1')){
+			this._extensions = new Map();
+			const exVal = coseMap.get('1');
+			for (const key of Object.keys(exVal)) {
+				this._extensions.set(key, exVal[key])
+			}
+		}
+		
+		return this;
+	}
+
+	async fromCoseExtensions(cose) {		
+		let parsedCose;
+		try {
+			//parsedCose = tools.cbor.decode(new Uint8Array(cose));
+			parsedCose = tools.cbor.decodeMultiple(new Uint8Array(cose));			
+		} catch (err) {
+			throw new Error(
+				"couldn't parse authenticator.authData.attestationData CBOR: " +
+					err,
+			);
+		}
+		if (typeof parsedCose !== "object") {
+			throw new Error(
+				"invalid parsing of authenticator.authData.attestationData CBOR",
+			);
+		}
+		const coseMap = new Map(Object.entries(parsedCose));
+		if(coseMap.get('0')){
+			this._extensions = new Map();
+			const exVal = coseMap.get('0');
+			for (const key of Object.keys(exVal)) {
+				this._extensions.set(key, exVal[key])
+			}
+		}
+		
 		return this;
 	}
 
@@ -571,6 +612,10 @@ class PublicKey {
 	 */
 	getAlgorithm() {
 		return this._alg;
+	}
+
+	getExtensions() {
+		return this._extensions;
 	}
 
 	/**

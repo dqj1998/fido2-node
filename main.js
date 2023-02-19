@@ -40,7 +40,8 @@ const DOMAIN_JSON_FN = 'domain.json';
 var domains_conf
 var registeredRps
 var enterpriseRps
-var enterpriseAaguids;
+var enterpriseAaguids
+var deviceBindedKeys
 
 let database = new Map();//use json as DB, all data will lost after restart program.
 
@@ -61,6 +62,7 @@ function loadDomains(){
   registeredRps = [];
   enterpriseRps = [];
   enterpriseAaguids = new Map();
+  deviceBindedKeys = new Map();
 
   domains_conf.domains.forEach(element => {  
     registeredRps.push(element.domain)
@@ -71,6 +73,9 @@ function loadDomains(){
         enterpriseAaguids.set(element.domain, element.enterprise_aaguids)
       }
     }
+
+    if(element.device_bind_key)deviceBindedKeys.set(element.domain, element.device_bind_key)
+    else deviceBindedKeys.set(element.domain, false)
   });
 
   if('mem' == process.env.STORAGE_TYPE){
@@ -120,7 +125,7 @@ async function AppController(request, response) {
         if(username && username.length > 0 && (!user || !user.registered)) {
           response.end(JSON.stringify({
             'status': 'failed',
-            'message': `Username ${username} does not exist`
+            'message': `SvrErr105:Username ${username} does not exist`
           }));
           return
         }
@@ -206,7 +211,7 @@ async function AppController(request, response) {
         if( !attestation ){
           let rtn = {
             'status': 'failed',
-            'message': 'key is not found.'
+            'message': 'SvrErr104:key is not found.'
           }
           response.end(JSON.stringify(rtn));
           return
@@ -232,17 +237,35 @@ async function AppController(request, response) {
     
         let rtn='';
         if(authnResult.audit.complete) {
-          attestation.counter = authnResult.authnrData.get('counter');    
-          
-          rtn = {
-            'status': 'ok',
-            credId: body.id,
-            counter: attestation.counter
-          }
+          const unique_device_id = 
+            authnResult.authnrData.get('extensions') ? (authnResult.authnrData.get('extensions').get('dfido2_device_unique_id') ? authnResult.authnrData.get('extensions').get('dfido2_device_unique_id') : null) : null;
+          if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null==unique_device_id ){
+            rtn = {
+              'status': 'failed',
+              'message': 'SvrErr106:Unique device id is null!'
+            }
+          } else {
+            if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null != unique_device_id && 
+              attestation.unique_device_id !== unique_device_id){
+            //!bindedDeviceKey(cur_session.fido2lib.config.rpId, cur_session.username, attestation.publickey, unique_device_id)){
+              rtn = {
+                'status': 'failed',
+                'message': 'SvrErr102:Cannot auth with a unique device binded key from a different device!'
+              }
+            }else{
+              attestation.counter = authnResult.authnrData.get('counter');    
+            
+              rtn = {
+                'status': 'ok',
+                credId: body.id,
+                counter: attestation.counter
+              }
+            }
+          }          
         } else {
           rtn = {
             'status': 'failed',
-            'message': 'Can not authenticate signature!'
+            'message': 'SvrErr103:Can not authenticate signature!'
           }
         }
         
@@ -313,19 +336,24 @@ async function AppController(request, response) {
       }else if( url.pathname == '/attestation/result'){
         const body = await loadJsonBody(request)
         
-        const clientData = JSON.parse(stringfy(body.response.clientDataJSON))
-
-        /*const tpAtt = typeof body.response.attestationObject //for debug
+        const clientData = JSON.parse(stringfy(body.response.clientDataJSON))        
+        
+        //For debug
+        /*const tpAtt = typeof body.response.attestationObject
         const attobj=new Buffer.from(body.response.attestationObject)
         var ab = new ArrayBuffer(attobj.length);
         var view = new Uint8Array(ab);
         for (var i = 0; i < attobj.length; ++i) {
             view[i] = attobj[i];
         }*/
+        //End of debug
+
         body.rawId = new Uint8Array(base64url.toBuffer(body.rawId)).buffer; //bufferKeepBase64(body.rawId); 
         body.response.attestationObject = new Uint8Array(base64url.toBuffer(body.response.attestationObject)).buffer//bufferKeepBase64(body.response.attestationObject)        
         body.response.clientDataJSON = new Uint8Array(base64url.toBuffer(body.response.clientDataJSON)).buffer; //bufferKeepBase64(body.response.clientDataJSON)
         
+        //const attestationObject = JSON.parse(stringfy(body.response.attestationObject))
+
         const cur_session = sessions[clientData.challenge]
         delete sessions[clientData.challenge]
 
@@ -339,8 +367,7 @@ async function AppController(request, response) {
         };
         
         let regResult = await cur_session.fido2lib.attestationResult(body, attestationExpectations);
-        logger.debug(regResult);
-        
+        logger.debug(regResult);        
 
         const credId = regResult.authnrData.get('credId')
         const aaguid = buf2hex(regResult.authnrData.get('aaguid'))
@@ -352,30 +379,39 @@ async function AppController(request, response) {
           const guids = enterpriseAaguids.get(cur_session.fido2lib.config.rpId)
           if(!guids || !guids.includes(aaguidtxt) ){
             rtn.status ='failed',
-            rtn.message = 'Unregistered enterprise authenticator aaguid!'
+            rtn.message = 'SvrErr101:Unregistered enterprise authenticator aaguid!'
           }
         }
 
-        if(!rtn.status){
-          const counter = regResult.authnrData.get('counter');
-          await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
-            regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
-            new Uint8Array(credId), aaguid);
-          
-          mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
-          
-          if(regResult.audit.complete) {
-            await setRegistered(cur_session.fido2lib.config.rpId, cur_session.username, true)         
-      
-            rtn.status = 'ok',
-            rtn.counter = counter
-            rtn.credId = Array.from(new Uint8Array(regResult.authnrData.get('credId')))
-          } else {
-            rtn.status ='failed',
-            rtn.message = 'Can not authenticate signature!'
-          }  
-        }
+        const unique_device_id = 
+          regResult.authnrData.get('extensions') ? (regResult.authnrData.get('extensions').get('dfido2_device_unique_id') ? regResult.authnrData.get('extensions').get('dfido2_device_unique_id') : null) : null;
+
+        if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null==unique_device_id ){
+          rtn = {
+            'status': 'failed',
+            'message': 'SvrErr106:Unique device id is null!'
+          }
+        } else {
+          if(!rtn.status){
+            const counter = regResult.authnrData.get('counter');
+            await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
+              regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
+              new Uint8Array(credId), aaguid, unique_device_id);
+            
+            mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
+            
+            if(regResult.audit.complete) {
+              await setRegistered(cur_session.fido2lib.config.rpId, cur_session.username, true)         
         
+              rtn.status = 'ok',
+              rtn.counter = counter
+              rtn.credId = Array.from(new Uint8Array(regResult.authnrData.get('credId')))
+            } else {
+              rtn.status ='failed',
+              rtn.message = 'SvrErr103:Can not authenticate signature!'
+            }  
+          }
+        }
         response.end(JSON.stringify(rtn));
       }
       // ====== Management methods ======
@@ -662,7 +698,7 @@ async function getAttestationData(rpId, username){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT public_key, counter, fmt, aaguid, credid_base64 '+
+        connection.query('SELECT public_key, counter, fmt, aaguid, credid_base64, t.unique_device_id '+
             ' from registered_rps p, registered_users u, attestations t ' +
             ' where p.deleted is null and u.deleted is null and t.deleted is null ' +
             ' and p.rp_id=u.rp_id and t.user_id=u.user_id '+
@@ -680,7 +716,8 @@ async function getAttestationData(rpId, username){
             counter:element.counter,
             fmt:element.fmt,
             aaguid:element.aaguid,
-            credId:base64url.toBuffer(element.credid_base64)
+            credId:base64url.toBuffer(element.credid_base64),
+            unique_device_id: element.unique_device_id
           })
         });
       }
@@ -739,14 +776,15 @@ async function putUserData(rpId, username, userid, displayname, registered){
   }
 }
 
-async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid){
+async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id){
   if('mem'==process.env.STORAGE_TYPE){
     database.get(rpId).get(username).attestation.push({
       publickey: publickey,
       counter: counter,
       fmt: counter,
       credId: credId,
-      aaguid: aaguid
+      aaguid: aaguid,
+      unique_device_id: unique_device_id
     })
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -768,8 +806,8 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       })
       if(0<result_userid.length){
         const results = await new Promise((resolve, reject) => {
-          connection.query('INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid ) values(?,?,?,?,?,?) ', 
-              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid],
+          connection.query('INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid, unique_device_id ) values(?,?,?,?,?,?,?) ', 
+              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid, unique_device_id?unique_device_id:''],
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -807,6 +845,42 @@ async function setRegistered(rpId, username, registered){
               resolve(results)
             })
       })
+    }catch (err) {      
+      logger.error('DB err'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }  
+}
+
+async function bindedDeviceKey(rpId, username, publickey, unique_device_id){
+  if('mem'==process.env.STORAGE_TYPE){
+    let db_publickey = database.get(rpId).get(username).attestation.publickey
+    let db_unique_device_id = database.get(rpId).get(username).unique_device_id
+    return database.get(rpId).get(username).registered &&  db_publickey === publickey && 
+        db_unique_device_id === unique_device_id
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const result_device = await new Promise((resolve, reject) => {
+        connection.query('SELECT attest_id from registered_rps p, registered_users u, attestations a ' +
+            ' where p.deleted is null and u.deleted is null and a.deleted is null and registered = true ' +
+            ' and p.rp_id=u.rp_id and a.user_id=u.user_id and p.rp_domain=? and u.username=? and a.public_key=? and a.unique_device_id=? ',
+            [rpId, username, publickey, unique_device_id],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      return 0<result_device.length
     }catch (err) {      
       logger.error('DB err'+err)
     } finally {

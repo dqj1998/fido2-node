@@ -116,6 +116,8 @@ class Fido2AttestationResult extends Fido2Result {
 		await this.validateInitialCounter();
 		await this.validateCredId();
 		await this.validateTransports();
+
+		await this.validateExtensions();
 	}
 
 	static async create(req, exp) {
@@ -156,6 +158,8 @@ class Fido2AssertionResult extends Fido2Result {
 		await this.validateAssertionSignature();
 		await this.validateUserHandle();
 		await this.validateCounter();
+
+		await this.validateExtensions();
 	}
 
 	static create(req, exp) {

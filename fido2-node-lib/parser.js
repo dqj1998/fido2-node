@@ -317,7 +317,7 @@ async function parseAuthenticatorData(authnrDataArrayBuffer) {
 	ret.set("rpIdHash", authnrDataBuf.buffer.slice(offset, offset + 32));
 	offset += 32;
 	const flags = authnrDataBuf.getUint8(offset);
-	const flagsSet = new Set();
+	const flagsSet =  new Set();
 	ret.set("flags", flagsSet);
 	if (flags & 0x01) flagsSet.add("UP");
 	if (flags & 0x02) flagsSet.add("RFU1");
@@ -347,25 +347,31 @@ async function parseAuthenticatorData(authnrDataArrayBuffer) {
 		);
 		offset += credIdLen;
 
-		// Import public key		
+		// Import public key and extensions
 		//const publicKey = new PublicKey();
 		const pubKey = require("./keyUtils.js")
 		const publicKey = new pubKey
 		await publicKey.fromCose(
 			authnrDataBuf.buffer.slice(offset, authnrDataBuf.buffer.byteLength),
+			extensions
 		);
 
 		ret.set("credentialPublicKeyCose", await publicKey.toCose());
 		ret.set("credentialPublicKeyJwk", await publicKey.toJwk());
 		ret.set("credentialPublicKeyPem", await publicKey.toPem());
-	}
 
-	// TODO: parse extensions
-	if (extensions) {
-		// extensionStart = offset
-		throw new Error("authenticator extensions not supported");
+		if (extensions) {
+			ret.set("extensions", publicKey.getExtensions())
+		}	
+	} else if(extensions) {
+		const pubKey = require("./keyUtils.js")
+		const publicKey = new pubKey
+		await publicKey.fromCoseExtensions(
+			authnrDataBuf.buffer.slice(offset, authnrDataBuf.buffer.byteLength)
+		);
+		ret.set("extensions", publicKey.getExtensions())
 	}
-
+	
 	return ret;
 }
 
