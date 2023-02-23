@@ -9,6 +9,7 @@
 	isPositiveInteger,
 	tools
 } from "./utils.js";*/
+const { default: base64url } = require("base64url");
 const {
 	arrayBufferEquals,
 	appendBuffer,
@@ -646,7 +647,8 @@ async function validateUserHandle() {
 	}
 
 	userHandle = coerceToBase64Url(userHandle, "userHandle");
-	//let expUserHandle = this.expectations.get("userHandle");
+	userHandle = isBase64Url(userHandle)?base64url.decode(userHandle):userHandle;
+
 	let expUserHandle = coerceToBase64Url(this.expectations.get("userHandle"), "userHandle")
 	if (typeof userHandle === "string" &&
 		userHandle === expUserHandle) {
