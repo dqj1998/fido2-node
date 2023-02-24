@@ -13,7 +13,7 @@ function isBase64Url(str) {
 	return !!str.match(/^[A-Za-z0-9\-_]+={0,2}$/);
 }
 
-function isBase64(str) {  
+function isBase64(str) {
 	try {
 		if (str ==='' || str.trim() ===''){ return false; }
 		var ss= atob(str)
