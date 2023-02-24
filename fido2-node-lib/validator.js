@@ -16,6 +16,7 @@ const {
 	coerceToArrayBuffer,
 	coerceToBase64Url,
 	isBase64Url,
+	isBase64,
 	isPem,
 	isPositiveInteger,
 	tools
@@ -647,7 +648,7 @@ async function validateUserHandle() {
 	}
 
 	userHandle = coerceToBase64Url(userHandle, "userHandle");
-	userHandle = isBase64Url(userHandle)?base64url.decode(userHandle):userHandle;
+	userHandle = isBase64(userHandle)?base64url.decode(userHandle):userHandle;
 
 	let expUserHandle = coerceToBase64Url(this.expectations.get("userHandle"), "userHandle")
 	if (typeof userHandle === "string" &&

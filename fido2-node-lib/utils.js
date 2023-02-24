@@ -13,6 +13,17 @@ function isBase64Url(str) {
 	return !!str.match(/^[A-Za-z0-9\-_]+={0,2}$/);
 }
 
+function isBase64(str) {  
+	try {
+		if (str ==='' || str.trim() ===''){ return false; }
+		var ss= atob(str)
+		ss=btoa(ss)
+		return ss == str;
+	} catch (err) {
+		return false;
+	}
+}
+
 function isPem(pem) {
 	if (typeof pem !== "string") {
 		return false;
@@ -266,6 +277,7 @@ module.exports.coerceToArrayBuffer = coerceToArrayBuffer
 module.exports.coerceToBase64 = coerceToBase64
 module.exports.coerceToBase64Url = coerceToBase64Url
 module.exports.isBase64Url = isBase64Url
+module.exports.isBase64 = isBase64
 module.exports.isPem = isPem
 module.exports.isPositiveInteger = isPositiveInteger
 module.exports.jsObjectToB64 = jsObjectToB64
