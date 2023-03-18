@@ -4,17 +4,20 @@ const base64url = require('base64url');
 const crypto    = require('crypto');
 const fs        = require('fs');
 const log4js    = require('log4js');
+const utils = require("./fido2-node-lib/utils")
 
 require('dotenv').config();
 
 const { v4: uuidv4 } = require('uuid');
-//const { Fido2Lib } = require("fido2-lib");
 
 const { env } = require("process");
 
 log4js.configure('log4js-conf.json');
 const logger = log4js.getLogger();
 //logger.level = process.env.LOG4JS_LEVEL;
+
+//console.log(process.version)
+logger.info('Running on nodejs:' + process.version)
 
 const port = process.env.PORT || 443;
 
@@ -49,6 +52,9 @@ loadDomains();
 
 let mapCredidUsername = {};//Link cred ids with usernames
 let sessions = {};
+
+require("./mds3.js") //init MDS3
+
 
 server.on('request', AppController);
 
@@ -305,14 +311,17 @@ async function AppController(request, response) {
                 transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']
               })
           }
-          registrationOptions.excludeCredentials = excludeCredentials
+          if(excludeCredentials.length > 0)registrationOptions.excludeCredentials = excludeCredentials
+
+          //console.log("excludeCredentials:" + username + " size:" + excludeCredentials.length);
         }        
 
         registrationOptions.user.id = base64url.encode(userid);
         registrationOptions.user.name = username;
         registrationOptions.user.displayName = body.displayName?body.displayName:username;
 
-        if(fido2Lib.config.attestation){
+        if(body.attestation)registrationOptions.attestation = body.attestation
+        else if(fido2Lib.config.attestation){
           registrationOptions.attestation = fido2Lib.config.attestation
         }
 
@@ -330,12 +339,21 @@ async function AppController(request, response) {
         };
 
         registrationOptions.status = 'ok';
+        registrationOptions.errorMessage = '';
 
         response.end(JSON.stringify(registrationOptions));
 
       }else if( url.pathname == '/attestation/result'){
         const body = await loadJsonBody(request)
         
+        let rtn={};
+
+        let chkReq = checkResultRequest(body)
+        if(0 < Object.keys(chkReq).length){
+          response.end(JSON.stringify(chkReq));
+          return;
+        }
+
         const clientData = JSON.parse(stringfy(body.response.clientDataJSON))        
         
         //For debug
@@ -352,10 +370,12 @@ async function AppController(request, response) {
         body.response.attestationObject = new Uint8Array(base64url.toBuffer(body.response.attestationObject)).buffer//bufferKeepBase64(body.response.attestationObject)        
         body.response.clientDataJSON = new Uint8Array(base64url.toBuffer(body.response.clientDataJSON)).buffer; //bufferKeepBase64(body.response.clientDataJSON)
         
-        //const attestationObject = JSON.parse(stringfy(body.response.attestationObject))
+        //const attestationObject = parser.parseAttestationObject(body.response.attestationObject) //JSON.parse(stringfy(body.response.attestationObject))
 
         const cur_session = sessions[clientData.challenge]
         delete sessions[clientData.challenge]
+
+        console.log("/attestation/result:" + cur_session.username)
 
         if(null==cur_session.fido2lib)return
 
@@ -365,19 +385,26 @@ async function AppController(request, response) {
             rpId: cur_session.fido2lib.config.rpId,
             factor: "either"
         };
+
+        var regResult
+        try{
+          regResult = await cur_session.fido2lib.attestationResult(body, attestationExpectations);
+        }catch(exp){
+          console.log("/attestation/result exp:" + cur_session.username + " msg="+exp.message)
+          throw exp
+        }
         
-        let regResult = await cur_session.fido2lib.attestationResult(body, attestationExpectations);
         logger.debug(regResult);        
 
         const credId = regResult.authnrData.get('credId')
-        const aaguid = buf2hex(regResult.authnrData.get('aaguid'))
 
-        let rtn={};
+        const aaguidData = regResult.authnrData.get('aaguid')
+        const aaguid = buf2hex(aaguidData)
+        //const aaguidtxt = buf2text(aaguidData) // Buffer.from(aaguid, 'hex').toString('utf-8'); //String.fromCharCode.apply("", new Uint8Array(aaguidData))
 
-        const aaguidtxt = String.fromCharCode.apply("", new Uint8Array(regResult.authnrData.get('aaguid')))
         if(cur_session.fido2lib.config.attestation == "enterprise"){
           const guids = enterpriseAaguids.get(cur_session.fido2lib.config.rpId)
-          if(!guids || !guids.includes(aaguidtxt) ){
+          if(!guids || !guids.includes(aaguid) ){
             rtn.status ='failed',
             rtn.message = 'SvrErr101:Unregistered enterprise authenticator aaguid!'
           }
@@ -392,7 +419,9 @@ async function AppController(request, response) {
             'message': 'SvrErr106:Unique device id is null!'
           }
         } else {
-          if(!rtn.status){
+          //console.log("before pushAttestation status:" + JSON.stringify(rtn))
+          if(0 == Object.keys(rtn).length){
+            console.log("before pushAttestation call:" + cur_session.username)
             const counter = regResult.authnrData.get('counter');
             await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
               regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
@@ -412,6 +441,9 @@ async function AppController(request, response) {
             }  
           }
         }
+
+        console.log("result end:" + cur_session.username + " rtn=" + JSON.stringify(rtn))
+
         response.end(JSON.stringify(rtn));
       }
       // ====== Management methods ======
@@ -480,8 +512,12 @@ async function AppController(request, response) {
           response.end("");
         }        
       }      
-    }catch(ex){
-      response.end(ex.message);
+    }catch(ex){      
+      console.log("EX: " + ex.message)
+      let rtn={};
+      rtn.status ='failed',
+      rtn.message = 'SvrErr999:Exception:' + ex.message
+      response.end(JSON.stringify(rtn));
     }
   }
   
@@ -499,6 +535,42 @@ function equlsArrayBuffer(a, b){
     if(a[i]!=b[i])return false;
   }
   return true 
+}
+
+function checkResultRequest(jsonBody){
+  var rtn = {};
+  if(!jsonBody.id){
+    rtn = {
+      'status': 'failed',
+      'message': 'SvrErr107:No ID field in the body of /attestation/result request!'
+    }
+  }else if(typeof jsonBody.id !== 'string'){
+    rtn = {
+      'status': 'failed',
+      'message': 'SvrErr112:The ID field is not a DOMString in the body of /attestation/result request!'
+    }
+  }else if(!utils.isBase64Url(jsonBody.id)){
+    rtn = {
+      'status': 'failed',
+      'message': 'SvrErr108:ID field is not Base64Url encoded in the body of /attestation/result request!'
+    }
+  }else if(!jsonBody.type){
+    rtn = {
+      'status': 'failed',
+      'message': 'SvrErr109:No TYPE field in the body of /attestation/result request!'
+    }
+  }else if(typeof jsonBody.type !== 'string'){
+    rtn = {
+      'status': 'failed',
+      'message': 'SvrErr110:The TYPE field is not a DOMString in the body of /attestation/result request!'
+    }
+  }else if(jsonBody.type !== 'public-key'){
+    rtn = {
+      'status': 'failed',
+      'message': 'SvrErr111:The TYPE field is not public-key in the body of /attestation/result request!'
+    }
+  }
+  return rtn;
 }
 
 function isBase64(str) {  
@@ -740,6 +812,8 @@ async function putUserData(rpId, username, userid, displayname, registered){
       'id': userid,//Record non base64 user id
       'attestation': []
     });
+
+    console.log("putUserData:" + username)
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {
@@ -778,6 +852,7 @@ async function putUserData(rpId, username, userid, displayname, registered){
 
 async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id){
   if('mem'==process.env.STORAGE_TYPE){
+    console.log("try pushAttestation:" + username)
     database.get(rpId).get(username).attestation.push({
       publickey: publickey,
       counter: counter,
@@ -786,6 +861,8 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       aaguid: aaguid,
       unique_device_id: unique_device_id
     })
+
+    console.log("pushAttestation:" + username)
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {

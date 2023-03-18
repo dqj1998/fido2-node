@@ -31,7 +31,7 @@ const coseLabels = {
 		name: "alg",
 		values: {
 			"-7": "ECDSA_w_SHA256",
-			/* "-8": "EdDSA", */
+			"-8": "EdDSA",
 			"-35": "ECDSA_w_SHA384",
 			"-36": "ECDSA_w_SHA512",
 			/*"-37": "RSASSA-PSS_w_SHA-256",
@@ -130,9 +130,9 @@ const algToJWKAlg = {
 	"ECDSA_w_SHA256": "ES256",
 	"ECDSA_w_SHA384": "ES384",
 	"ECDSA_w_SHA512": "ES512",
-	/*
-	EdDSA is untested and unfinished
-	"EdDSA": "EdDSA" */
+	
+	// TODO: EdDSA is untested and unfinished
+	"EdDSA": "EdDSA"
 };
 
 /**
@@ -153,19 +153,19 @@ const algorithmInputMap = {
 	"ECDSA_w_SHA256": "ECDSA",
 	"ECDSA_w_SHA384": "ECDSA",
 	"ECDSA_w_SHA512": "ECDSA",
-	/*"EdDSA": "EdDSA",*/
 
 	/* JWK alg to Webcrypto algorithm name */
 	"RS256": "RSASSA-PKCS1-v1_5",
 	"RS384": "RSASSA-PKCS1-v1_5",
 	"RS512": "RSASSA-PKCS1-v1_5",
+	//"RS1": "RSASSA-PKCS1-v1_5",//dqj
 	/*"PS256": "RSASSA-PSS",
 	"PS384": "RSASSA-PSS",
 	"PS512": "RSASSA-PSS",*/
 	"ES384": "ECDSA",
 	"ES256": "ECDSA",
 	"ES512": "ECDSA",
-	/*"EdDSA": "EdDSA",*/
+	"EdDSA": "Ed25519", //"EdDSA",
 };
 
 /**
@@ -186,7 +186,7 @@ const inputHashMap = {
 	"ECDSA_w_SHA256": "SHA-256",
 	"ECDSA_w_SHA384": "SHA-384",
 	"ECDSA_w_SHA512": "SHA-512",
-	/* "EdDSA": "EdDSA", */
+	"EdDSA": undefined,
 };
 
 /** 
@@ -348,7 +348,12 @@ class PublicKey {
 
 			// Default hash to SHA-256
 			algorithm.hash = hashName || "SHA-256";
+		} else if (keyInfo.algorithm.algorithmId === "1.3.101.112") {
+			algorithm.name = "Ed25519";
+
+			algorithm.hash = hashName || "SHA-512";
 		}
+		
 		this.setAlgorithm(algorithm);
 
 		// Import key using webcrypto
@@ -393,10 +398,12 @@ class PublicKey {
 		// Import jwk with Jose
 		this._original_jwk = jwk;
 
+		const the_alg = this.getAlgorithm()
+		const { name } = the_alg
 		const generatedKey = await tools.webcrypto.subtle.importKey(
 			"jwk",
 			jwkCopy,
-			this.getAlgorithm(),
+			the_alg,
 			true,
 			["verify"]
 		);

@@ -7,13 +7,13 @@
         {
             "domain": "rp01.abc.com",
             "enterprise": true,
-            "enterprise_aaguids":["aaguid_test_0000"],
+            "enterprise_aaguids":["aaaaaaaaaaa888888888999999999000"],
             "device_bind_key": true
         },
         {
             "domain": "rp02.def.com",
             "enterprise": true,
-            "enterprise_aaguids":["aaguid_test_0000", "aaguid_test_0001"],
+            "enterprise_aaguids":["aaaaaaaaaaa888888888999999999000", "aaaaaaaaaaa888888888999999999001"],
             "device_bind_key": false
         },
         {

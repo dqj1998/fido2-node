@@ -4,9 +4,6 @@ const utils = require("./utils.js")
 //import { Fido2AssertionResult, Fido2AttestationResult, Fido2Result } from "./response.js";
 const { Fido2AssertionResult, Fido2AttestationResult, Fido2Result } = require("./response.js")
 
-//import { MdsCollection, MdsEntry } from "./mds.js";
-const { MdsCollection, MdsEntry } = require("./mds.js")
-
 // add 'none' attestation format
 //import { noneAttestation } from "./attestations/none.js";
 const noneAttestation = require("./attestations/none.js").noneAttestation
@@ -39,7 +36,7 @@ const {
 
 const globalAttestationMap = new Map();
 const globalExtensionMap = new Map();
-const globalMdsCollection = new Map();
+//const globalMdsCollection = new Map();
 
 class Fido2Lib {
 	/**
@@ -141,7 +138,7 @@ class Fido2Lib {
 		}
 
 		// cryptoParams
-		this.config.cryptoParams = opts.cryptoParams || [-7, -257];
+		this.config.cryptoParams = opts.cryptoParams || [-7, -257, -65535, -8];
 		checkOptType(this.config, "cryptoParams", Array);
 		if (this.config.cryptoParams.length < 1) {
 			throw new TypeError("cryptoParams must have at least one element");
@@ -156,67 +153,6 @@ class Fido2Lib {
 
 		// TODO: convert icon file to data-URL icon
 		// TODO: userVerification
-	}
-
-	/**
-	 * Creates a new {@link MdsCollection}
-	 * @param {String} collectionName The name of the collection to create.
-	 * Used to identify the source of a {@link MdsEntry} when {@link Fido2Lib#findMdsEntry}
-	 * finds multiple matching entries from different sources (e.g. FIDO MDS 1 & FIDO MDS 2)
-	 * @return {MdsCollection} The MdsCollection that was created
-	 * @see  MdsCollection
-	 */
-	static createMdsCollection(collectionName) {
-		return new MdsCollection(collectionName);
-	}
-
-	/**
-	 * Adds a new {@link MdsCollection} to the global MDS collection list that will be used for {@link findMdsEntry}
-	 * @param {MdsCollection} mdsCollection The MDS collection that will be used
-	 * @see  MdsCollection
-	 */
-	static async addMdsCollection(mdsCollection) {
-		if (!(mdsCollection instanceof MdsCollection)) {
-			throw new Error(
-				"expected 'mdsCollection' to be instance of MdsCollection, got: " +
-					mdsCollection,
-			);
-		}
-		await mdsCollection.validate();
-		globalMdsCollection.set(mdsCollection.name, mdsCollection);
-	}
-
-	/**
-	 * Removes all entries from the global MDS collections list. Mostly used for testing.
-	 */
-	static clearMdsCollections() {
-		globalMdsCollection.clear();
-	}
-
-	/**
-	 * Returns {@link MdsEntry} objects that match the requested id. The
-	 * lookup is done by calling {@link MdsCollection#findEntry} on the current global
-	 * MDS collection. If no global MDS collection has been specified using
-	 * {@link setMdsCollection}, an `Error` will be thrown.
-	 * @param  {String|ArrayBuffer} id The authenticator id to look up metadata for
-	 * @return {Array.<MdsEntry>}    Returns an Array of {@link MdsEntry} for the specified id.
-	 * If no entry was found, the Array will be empty.
-	 * @see  MdsCollection
-	 */
-	static findMdsEntry(id) {
-		if (globalMdsCollection.size < 1) {
-			throw new Error(
-				"must set MDS collection before attempting to find an MDS entry",
-			);
-		}
-
-		const ret = [];
-		for (const collection of globalMdsCollection.values()) {
-			const entry = collection.findEntry(id);
-			if (entry) ret.push(entry);
-		}
-
-		return ret;
 	}
 
 	/**
@@ -704,7 +640,7 @@ class Fido2Lib {
 
 		if (Object.keys(extensions).length > 0) {
 			options.extensions = extensions;
-		}
+		}else options.extensions = JSON.parse('{"example.extension.bool":true}');
 
 		return options;
 	}
@@ -978,11 +914,6 @@ module.exports.Fido2Result = Fido2Result;
 //export { attach } from "./validator.js";
 module.exports.attach = require("./validator.js").attach
 //require("./validator.js")
-
-// Export mds
-//export { MdsCollection, MdsEntry };
-module.exports.MdsCollection = MdsCollection;
-module.exports.MdsEntry = MdsEntry;
 
 // Export attestations
 //export { androidSafetyNetAttestation, fidoU2fAttestation, noneAttestation, packedAttestation, tpmAttestation, appleAttestation };

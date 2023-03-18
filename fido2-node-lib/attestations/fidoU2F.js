@@ -48,7 +48,7 @@ async function fidoU2fValidateFn() {
 
 	// make sure our root certs are loaded
 	if (CertManager.getCerts().size === 0) {
-		rootCertList.forEach((cert) => CertManager.addCert(cert));
+		rootCertList.u2fRootCerts.forEach((cert) => CertManager.addCert(cert));
 	}
 
 	// decode attestation cert

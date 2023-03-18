@@ -1,0 +1,18 @@
+/*
+ * This file's comment is removed before JSON parse.
+ */
+{
+  "mds": {
+    "url": "https://mds.fidoalliance.org/",  /* MDS3 BLOB download url. */
+    "file": "../data/blob.jwt",              /* MDS3 BLOB file path. */
+    "access": "url"                          /* How to access MDS3. */
+  },
+  "payload": {
+    "file": "../data/payload.json"           /* MDS3 BLOB payload file path. */
+  },
+  "root": {
+    "url": "http://secure.globalsign.com/cacert/root-r3.crt",  /* root GS-R3 certificate url. */
+    "file": "../cert/root-r3.crt",                             /* root GS-R3 certificate file. */
+    "access": "url"                                            /* How to access root GS-R3 certificate. */
+  }
+}

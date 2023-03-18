@@ -604,6 +604,7 @@ async function validatePublicKey() {
 
 	switch (jwk.kty) {
 		case "EC":
+		case "OKP":
 			if (typeof jwk.crv !== "string") {
 				throw new Error("authnrData credentialPublicKeyJwk.crv isn't of type String");
 			}

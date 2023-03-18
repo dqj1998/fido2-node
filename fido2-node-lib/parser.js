@@ -258,16 +258,29 @@ async function parseAuthnrAttestationResponse(msg) {
 		"attestationObject",
 	);
 
-	let parsed;
+	let parsedArray;
 	try {
-		parsed = tools.cbor.decode(new Uint8Array(attestationObject));
+		//parsed = tools.cbor.decode(new Uint8Array(attestationObject));
+		parsedArray = tools.cbor.decodeMultiple(new Uint8Array(attestationObject));	
 	} catch (_err) {
 		throw new TypeError("couldn't parse attestationObject CBOR");
 	}
 
-	if (typeof parsed !== "object") {
+	if (typeof parsedArray !== "object") {
 		throw new TypeError("invalid parsing of attestationObject CBOR");
 	}
+
+	const coseMap = new Map(Object.entries(parsedArray));
+	const parsed = coseMap.get('0');
+
+	/*if(coseMap.get('0')){
+		this._extensions = new Map();
+		const exVal = coseMap.get('0');
+		for (const key of Object.keys(exVal)) {
+			this._extensions.set(key, exVal[key])
+		}
+	}*/
+		
 
 	if (typeof parsed.fmt !== "string") {
 		throw new Error("expected attestation CBOR to contain a 'fmt' string");

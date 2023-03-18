@@ -7,15 +7,17 @@ const { Certificate, CertManager } = require("../certUtils.js")
 //import { u2fRootCerts as rootCertList } from "./u2fRootCerts.js";
 const rootCertList = require("./u2fRootCerts.js")
 
+const mds3 = require("../../mds3.js")
+
 const algMap = new Map([
 	[-7, {
 		algName: "ECDSA_w_SHA256",
 		hashAlg: "SHA-256",
 	}],
-	// [-8, {
-	//     name: "EdDSA",
-	//     hash: undefined
-	// }],
+	[-8, {
+	    algName: "EdDSA",
+	    hashAlg: undefined
+	}],
 	[-35, {
 		algName: "ECDSA_w_SHA384",
 		hashAlg: "SHA-384",
@@ -157,23 +159,95 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 
 	// make sure our root certs are loaded
 	if (CertManager.getCerts().size === 0) {
-		rootCertList.forEach((cert) => CertManager.addCert(cert));
+		rootCertList.u2fRootCerts.forEach((cert) => CertManager.addCert(cert));
+
+		/*if(process.env.FIDO_CONFORMANCE_TEST){
+			const ents = mds3.mds3_client.getEntries();
+			if(ents){
+				ents.forEach((ent) => {
+					if(ent.attestationRootCertificates){
+						ent.attestationRootCertificates.forEach((cert) => CertManager.addCert(cert));
+					}
+				}				
+				);
+			}
+		}*/
 	}
 
 	// decode attestation cert
 	const attCert = new Certificate(coerceToBase64(parsedAttCert, "parsedAttCert"));
-	try {
-		await attCert.verify();
-	} catch (e) {
-		const err = e;
-		if (err.message === "Please provide issuer certificate as a parameter") {
-			// err = new Error("Root attestation certificate for this token could not be found. Please contact your security key vendor.");
-			audit.warning.set("attesation-not-validated", "could not validate attestation because the root attestation certification could not be found");
-		} else {
-			throw err;
+	
+	if(0 < _x5c.length){//validate chain
+		let certs = []
+		//_x5c.forEach(elem => certs.unshift(new Certificate(coerceToBase64(elem, "x5cElem"))))
+		_x5c.forEach(elem => certs.push(new Certificate(coerceToBase64(elem, "x5cElem"))))
+		certs.push(attCert)
+
+		for(let i = certs.length - 1; i > 0; i--) {
+			const issuernm = certs[i]._cert.issuer.typesAndValues[0].value.valueBlock.value
+			const certnm = certs[i - 1]._cert.subject.typesAndValues[0].value.valueBlock.value
+			if(issuernm !== certnm){
+				throw new Error("Broken certificate path.");
+			}
+		}
+
+		let roots = []// Array.from(CertManager.getCerts().values())
+		
+		if(aaguid){
+			try{
+				const aa_entries = await mds3.mds3_client.findByAAGUID(aaguid)
+				if(aa_entries){
+					//aa_entries.attestationRootCertificates.forEach((ent) => roots.unshift(new Certificate(ent)));
+					aa_entries.attestationRootCertificates.forEach((ent) => roots.push(new Certificate(ent)));
+				}
+			}catch (e) {
+				console.log(e.message);
+			}			
+		}
+
+		try{
+			await CertManager.verifyCertChain(certs, roots, null)
+		} catch (e) {
+			throw e;
+		}		
+	} else {//Verify one cert
+		CertManager.removeAll();
+		if(aaguid){
+			try{
+				console.log(buf2hex(aaguid))
+				const aa_entries = await mds3.mds3_client.findByAAGUID(aaguid)
+				if(aa_entries){
+					aa_entries.attestationRootCertificates.forEach((ent) => CertManager.addCert(ent));
+				}
+			}catch (e) {
+				console.log(e.message);
+			}			
+		}
+
+		//for debug
+		/*var ciss='', ssub='';
+		CertManager.getCerts().forEach((c)=>{
+			ciss += (c._cert.issuer ? c._cert.issuer.typesAndValues[0].value.valueBlock.value : "NON issuer") + ";";
+			ssub += (c._cert.subject.typesAndValues[0].value.valueBlock.value) + ";";
+		});
+		console.log(attCert._cert.subject.typesAndValues[0].value.valueBlock.value)
+		console.log(ssub)
+		console.log(ciss)*/
+		//end of debug
+
+		try {
+			await attCert.verify();
+		} catch (e) {
+			const err = e;
+			if (err.message === "Please provide issuer certificate as a parameter" && CertManager.getCerts().size > 0) {
+				// err = new Error("Root attestation certificate for this token could not be found. Please contact your security key vendor.");
+				audit.warning.set("attesation-not-validated", "could not validate attestation because the root attestation certification could not be found");
+			} else {
+				throw err;
+			}
 		}
 	}
-	// TODO: validate chain?
+
 	audit.journal.add("x5c");
 
 	// cert MUST be x.509v3
@@ -289,6 +363,12 @@ async function packedValidateSurrogate() {
 
 function packedValidateEcdaa() {
 	throw new Error("packed attestation: ECDAA not implemented, please open a GitHub issue.");
+}
+
+function buf2hex(buffer) { // buffer is an ArrayBuffer
+	return [...new Uint8Array(buffer)]
+		.map(x => x.toString(16).padStart(2, '0'))
+		.join('');
 }
 
 const packedAttestation = {

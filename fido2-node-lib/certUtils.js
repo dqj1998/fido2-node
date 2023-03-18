@@ -1,5 +1,5 @@
 //import { ab2str, coerceToArrayBuffer, isPem, pemToBase64, tools } from "./utils.js";
-//const { ab2str, coerceToArrayBuffer, isPem, pemToBase64, tools } = require("./utils.js")
+const { ab2str, coerceToArrayBuffer, isPem, pemToBase64, tools } = require("./utilsCore.js")
 /*const utils = require("./utils.js")
 ab2str = utils.ab2str
 coerceToArrayBuffer = utils.coerceToArrayBuffer
@@ -9,7 +9,7 @@ tools = utils.tools*/
 
 //const tools = require("./toolbox.js")
 
-require("./utilsCore.js");
+//require("./utilsCore.js");
 
 class Certificate {
 	constructor(cert) {
@@ -39,8 +39,9 @@ class Certificate {
 			throw new Error("error parsing ASN.1");
 		}
 
-		//this._cert = new tools.pkijs.Certificate({ schema: asn1.result });
-		this._cert = new require('pkijs').Certificate({ schema: asn1.result });
+		const tools = require("./toolbox.js")
+		this._cert = new tools.pkijs.Certificate({ schema: asn1.result });
+		//this._cert = new require('pkijs').Certificate({ schema: asn1.result });
 		
 		this.warning = new Map();
 		this.info = new Map();
@@ -67,7 +68,15 @@ class Certificate {
 		const issuerSerial = this.getIssuer();
 		const issuerCert = CertManager.getCertBySerial(issuerSerial);
 		const _issuerCert = issuerCert ? issuerCert._cert : undefined;
-		return this._cert.verify(_issuerCert)
+
+		const nowd = Date.now()
+		if(this._cert && this._cert.notAfter && this._cert.notAfter.value < nowd){
+			throw new Error("The cert is expired."); 
+		}else if(this._cert && this._cert.notBefore && this._cert.notBefore.value > nowd){
+			throw new Error("The cert is not starting yet."); 
+		}
+
+		return this._cert.verify(_issuerCert)//this._cert.verifyCertChain( Here! ) //this._cert.verify(_issuerCert)
 			.catch((err) => {
 				// who the hell throws a string?
 				if (typeof err === "string") {
@@ -486,12 +495,14 @@ class CRL {
 		crl = coerceToArrayBuffer(crl, "crl");
 		//const asn1 = tools.fromBER(crl);
 		const asn1 = require('asn1js').fromBER(cert)
-		/*this._crl = new tools.pkijs.CertificateRevocationList({
+
+		const tools = require("./toolbox.js")
+		this._crl = new tools.pkijs.CertificateRevocationList({
 			schema: asn1.result,
-		});*/
-		this._crl = new require('pkijs').CertificateRevocationList({
+		});
+		/*this._crl = new require('pkijs').CertificateRevocationList({
 			schema: asn1.result,
-		});		
+		});*/		
 	}
 }
 
@@ -518,6 +529,22 @@ class CertManager {
 	}
 
 	static async verifyCertChain(certs, roots, crls) {
+		//for debug
+		/*var ciss='', ssub='', rciss='', rsub='';
+		certs.forEach((c)=>{
+			ciss += (c._cert.issuer ? c._cert.issuer.typesAndValues[0].value.valueBlock.value : "NON issuer") + ";";
+			ssub += (c._cert.subject.typesAndValues[0].value.valueBlock.value) + ";";
+		});
+		roots.forEach((c)=>{
+			rciss += (c._cert.issuer ? c._cert.issuer.typesAndValues[0].value.valueBlock.value : "NON issuer") + ";";
+			rsub += (c._cert.subject.typesAndValues[0].value.valueBlock.value) + ";";
+		});
+		console.log(ciss)
+		console.log(ssub)
+		console.log(rciss)
+		console.log(rsub)*/
+		// end of debug
+
 		if (!Array.isArray(certs) ||
             certs.length < 1) {
 			throw new Error("expected 'certs' to be non-empty Array, got: " + certs);
@@ -560,16 +587,17 @@ class CertManager {
 			return crl._crl;
 		});
 
-		/*const chain = new tools.pkijs.CertificateChainValidationEngine({
+		const tools = require("./toolbox.js")
+		const chain = new tools.pkijs.CertificateChainValidationEngine({
 			trustedCerts: roots,
 			certs,
 			crls,
-		});*/
-		const chain = new require('pkijs').CertificateChainValidationEngine({
+		});
+		/*const chain = new require('pkijs').CertificateChainValidationEngine({
 			trustedCerts: roots,
 			certs,
 			crls,
-		});		
+		});*/		
 
 		const res = await chain.verify();
 		if (!res.result) {
