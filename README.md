@@ -29,6 +29,7 @@ The FIDO spec uses the RP server's domain name to identify RPs. We add an extens
 Cannot auth with a unique device binded key from a different device(another installation of SDK).
 Open/close this feature by the boolean config of device_bind_key in domain.json. The default is false.
 Usually, this feature is to force disable key synchronization among devices to gain a more robust security level.
+dFido2Lib-ios and dFido2Lib-android SDKs support this feature.
 
 # Storage
 Stoarge type is set by STORAGE_TYPE in .env
