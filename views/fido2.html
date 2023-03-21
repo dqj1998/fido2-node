@@ -35,8 +35,8 @@
                 }
             );
 
-            console.log("Attestation Options:");
-            console.log(attOptsResp);
+            //console.log("Attestation Options:");
+            //console.log(attOptsResp);
         }
 
         const keys = {
@@ -74,8 +74,8 @@
             attestationOptions.rp = {id: rpId}
         }
 
-        console.log("Attestation start");
-        console.log(JSON.stringify(attestationOptions, null, 2));
+        //console.log("Attestation start");
+        //console.log(JSON.stringify(attestationOptions, null, 2));
 
         fetch(fidoServerURL + "/attestation/options", {
             method: "POST",
@@ -87,8 +87,8 @@
         })
 	    .then((res) => res.json())
 	    .then((resp) => {
-            console.log("/attestation/options response: ");
-	        console.log(JSON.stringify(resp, null, 2));
+            //console.log("/attestation/options response: ");
+	        //console.log(JSON.stringify(resp, null, 2));
             if (resp.status === "failed") {
                 throw resp.message;
             }else{
@@ -110,8 +110,8 @@
                     },
                 };
 
-                console.log("/attestation/result attResult: ");
-	            console.log(JSON.stringify(attResult, null, 2));
+                //console.log("/attestation/result attResult: ");
+	            //console.log(JSON.stringify(attResult, null, 2));
 
                 return fetch(
                     fidoServerURL + "/attestation/result",

@@ -5,7 +5,7 @@ const mds3_client = new mds3.Builder().build();
 
 //for test
 /*mds3_client.findByAAGUID('9c835346-796b-4c27-8898-d6032f515cc5').then(data => {
-  console.log(data);
+  //console.log(data);
 });*/
 
 if(process.env.FIDO_CONFORMANCE_TEST){

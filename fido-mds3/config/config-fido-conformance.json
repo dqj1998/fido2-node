@@ -1,0 +1,23 @@
+/*
+ * This file's comment is removed before JSON parse.
+ *
+ * How to create fido-conformance.crt file:
+ *  1. Download MDS3ROOT.crt by click 'MDS3 TEST SERVER' button of conformance tool
+ *  2. Copy BEGIN to END part of MDS3ROOT.crt to create fido-conformance.pem file
+ *  3. Run openssl command: openssl x509 -outform der -in fido-conformance.pem -out fido-conformance.crt
+ */
+{
+  "mds": {
+    "url": "https://mds3.fido.tools/execute/634c6ced49448057778bbd088f9d2cec6a266b7a6d443525be85c0b3630ed406",  /* MDS3 BLOB download url is one of endpoints from 'MDS3 TEST SERVER' button of conformance tool . */
+    "file": "../data/blob-fido-conformance.jwt",              /* MDS3 BLOB file path. */
+    "access": "url"                          /* How to access MDS3. */
+  },
+  "payload": {
+    "file": "../data/payload-fido-conformance.json"           /* MDS3 BLOB payload file path. */
+  },
+  "root": {
+    "url": "https://mds3.fido.tools", /* fake url */
+    "file": "../cert/fido-conformance.crt",               
+    "access": "file"                                         
+  }
+}

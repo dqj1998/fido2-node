@@ -1,21 +1,10 @@
 // External dependencies
-//import { parse as tldtsParse } from "tldts";
 const tldtsParse = require('tldts').parse
 
-//import punycode from "punycode";
 const punycode = require('punycode')
 
-//import { decodeProtectedHeader, importJWK, jwtVerify } from "jose";
 const { decodeProtectedHeader, importJWK, jwtVerify } = require('jose')
 
-/*import {
-	Certificate as PkijsCertificate,
-	CertificateChainValidationEngine,
-	CertificateRevocationList,
-	CryptoEngine,
-	PublicKeyInfo,
-	setEngine
-} from "pkijs";*/
 const {
 	CertificateChainValidationEngine,
 	CertificateRevocationList,
@@ -25,27 +14,20 @@ const {
 } = require('pkijs')
 const PkijsCertificate =  require('pkijs').Certificate
 
-//import { fromBER } from "asn1js";
 const fromBER = require('asn1js')
 
-//import * as cbor from "cbor-x";
 const cbor = require('cbor-x')
 
-//import base64 from "@hexagon/base64";
 const base64 = require("@hexagon/base64").base64
 
 // Internal dependencies
-//import { Certificate } from "./certUtils.js";
 const Certificate = require("./certUtils.js").Certificate
 
-//import { PublicKey } from "./keyUtils.js";
 const PublicKey = require("./keyUtils.js")
 
 // Import webcrypto
-//import * as platformCrypto from "crypto";
 const platformCrypto = require('crypto')
 
-//import * as peculiarCrypto from "@peculiar/webcrypto";
 const peculiarCrypto = require('@peculiar/webcrypto')
 
 let webcrypto;

@@ -1,20 +1,18 @@
-//import { ab2str, appendBuffer, coerceToBase64, tools } from "../utils.js";
 const { ab2str, appendBuffer, coerceToBase64, tools } = require("../utils.js")
 
-//import { Certificate } from "../certUtils.js";
-const Certificate = require("../certUtils.js")
+const { Certificate } = require("../certUtils.js")
 
 function androidSafetyNetParseFn(attStmt) {
 	const ret = new Map();
 
-	// console.log("android-safetynet", attStmt);
+	//console.log("android-safetynet", attStmt);
 
 	ret.set("ver", attStmt.ver);
 
 	const response = ab2str(attStmt.response);
 	ret.set("response", response);
 
-	// console.log("returning", ret);
+	//console.log("returning", ret);
 	return ret;
 }
 
@@ -24,6 +22,11 @@ function androidSafetyNetParseFn(attStmt) {
 async function androidSafetyNetValidateFn() {
 	const response = this.authnrData.get("response");
 
+	const ver = this.authnrData.get("ver");
+	if(!ver){
+		throw new Error("android-safetynet attestation ver field is empty");
+	}	
+
 	// parse JWS
 	const protectedHeader = await tools.decodeProtectedHeader(response);
 	const publicKey = await tools.getEmbeddedJwk(protectedHeader);
@@ -31,6 +34,15 @@ async function androidSafetyNetValidateFn() {
 		response,
 		await tools.importJWK(publicKey),
 	);
+
+	const timestampMs = parsedJws.payload.timestampMs;
+	if(timestampMs){
+		if(Date.now() < timestampMs){
+			throw new Error("android-safetynet attestation timestampMs field is future");
+		} else if((60*1000) < (Date.now() - timestampMs)){
+			throw new Error("android-safetynet attestation timestampMs field is older than 1 minute");
+		}
+	} 
 
 	// Append now verified header to jws
 	parsedJws.header = protectedHeader;

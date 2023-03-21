@@ -122,6 +122,10 @@ var Accessor = /** @class */ (function () {
             var buf, pem, certificate;
             return __generator(this, function (_a) {
                 buf = fs_1.default.readFileSync(filePath);
+                /*const txt = buf.toString();
+                if(!txt.startsWith("----BEGIN CERTIFICATE-----")){
+                    pem = Accessor.createPem(buf, 'CERTIFICATE');
+                } else pem = txt */
                 pem = Accessor.createPem(buf, 'CERTIFICATE');
                 certificate = new jsrsasign_1.default.X509(pem);
                 Accessor.rootCert = certificate;

@@ -1,10 +1,7 @@
-//import { Certificate } from "../certUtils.js";
-const Certificate = require("../certUtils.js")
+const { Certificate } = require("../certUtils.js")
 
-//import { PublicKey } from "../keyUtils.js";
 const PublicKey = require("../keyUtils.js")
 
-//import { coerceToArrayBuffer, coerceToBase64, appendBuffer, tools, arrayBufferEquals } from "../utils.js";
 const { coerceToArrayBuffer, coerceToBase64, appendBuffer, tools, arrayBufferEquals } = require("../utils.js")
 
 // https://www.w3.org/TR/webauthn-2/#sctn-apple-anonymous-attestation

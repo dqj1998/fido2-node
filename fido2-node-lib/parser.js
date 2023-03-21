@@ -1,13 +1,8 @@
-//import { ab2str, coerceToArrayBuffer, coerceToBase64Url, tools } from "./utils.js";
 const { ab2str, coerceToArrayBuffer, coerceToBase64Url } = require("./utilsCore.js")
 const tools = require("./toolbox.js")
 
-//import { PublicKey } from "./keyUtils.js";
 const PublicKey = require("./keyUtils.js")
 
-//import { Fido2Lib } from "./main.js";
-//let f2lib = require('./fido2-node-lib/main');
-//const f2libMain = require("./main.js")
 var Fido2Lib
 
 // NOTE: throws if origin is https and has port 443
@@ -321,8 +316,8 @@ async function parseAuthenticatorData(authnrDataArrayBuffer) {
 
 	const ret = new Map();
 
-	// console.log("authnrDataArrayBuffer", authnrDataArrayBuffer);
-	// console.log("typeof authnrDataArrayBuffer", typeof authnrDataArrayBuffer);
+	//console.log("authnrDataArrayBuffer", authnrDataArrayBuffer);
+	//console.log("typeof authnrDataArrayBuffer", typeof authnrDataArrayBuffer);
 	// printHex("authnrDataArrayBuffer", authnrDataArrayBuffer);
 
 	const authnrDataBuf = new DataView(authnrDataArrayBuffer);

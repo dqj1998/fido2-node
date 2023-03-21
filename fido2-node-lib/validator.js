@@ -22,8 +22,6 @@ const {
 	tools
 } = require("./utils.js")
 
-//import { Fido2Lib } from "./main.js";
-//const Fido2Lib = require("./main.js")
 var Fido2Lib
 
 async function validateExpectations() {
@@ -355,8 +353,8 @@ async function validateChallenge() {
 
 	challenge = challenge.replace(/={1,2}$/, "");
 
-	// console.log("challenge", challenge);
-	// console.log("expectedChallenge", expectedChallenge);
+	//console.log("challenge", challenge);
+	//console.log("expectedChallenge", expectedChallenge);
 	if (challenge !== expectedChallenge) {
 		throw new Error("clientData challenge mismatch");
 	}
@@ -415,7 +413,7 @@ async function validateAssertionSignature() {
 	let rawAuthnrData = this.authnrData.get("rawAuthnrData");
 	let rawClientData = this.clientData.get("rawClientDataJson");
 
-	// console.log("publicKey", publicKey);
+	//console.log("publicKey", publicKey);
 	// printHex("expectedSignature", expectedSignature);
 	// printHex("rawAuthnrData", rawAuthnrData);
 	// printHex("rawClientData", rawClientData);
@@ -479,12 +477,16 @@ async function validateFlags() {
 	for (let expFlag of expectedFlags) {
 		if (expFlag === "UP-or-UV") {
 			if (flags.has("UV")) {
-				if (flags.has("UP")) {
+				if (flags.has("UP") || 
+						(this.request.userVerification && this.request.userVerification === "discouraged")) {
 					continue;
-				} else {
-					throw new Error("expected User Presence (UP) flag to be set if User Verification (UV) is set");
-				}
+				} else throw new Error("expected User Presence (UP) flag to be set if User Verification (UV) is set");
 			} else if (flags.has("UP")) {
+				if ( this.request.userVerification && this.request.userVerification === "required") {
+					throw new Error("Only authenticatorData.flags.UP is set for userVerification required");
+				} else continue;
+			} else if ( this.request.userVerification && 
+					(this.request.userVerification === "preferred" || this.request.userVerification === "discouraged") ){
 				continue;
 			} else {
 				throw new Error("expected User Presence (UP) or User Verification (UV) flag to be set and neither was");
@@ -493,11 +495,12 @@ async function validateFlags() {
 
 		if (expFlag === "UV") {
 			if (flags.has("UV")) {
-				if (flags.has("UP")) {
+				if (flags.has("UP") || 
+						(this.request.userVerification && this.request.userVerification === "discouraged")) {
 					continue;
-				} else {
-					throw new Error("expected User Presence (UP) flag to be set if User Verification (UV) is set");
-				}
+				} else throw new Error("expected User Presence (UP) flag to be set if User Verification (UV) is set");
+			} else if (this.request.userVerification && this.request.userVerification === "discouraged") {
+				continue;
 			} else {
 				throw new Error(`expected flag was not set: ${expFlag}`);
 			}

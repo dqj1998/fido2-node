@@ -1,10 +1,7 @@
-//import { abToBuf, abToPem, coerceToArrayBuffer, coerceToBase64, tools } from "../utils.js";
 const { abToBuf, abToPem, coerceToArrayBuffer, coerceToBase64, tools } = require("../utils.js")
 
-//import { Certificate, CertManager } from "../certUtils.js";
 const { Certificate, CertManager } = require("../certUtils.js")
 
-//import { u2fRootCerts as rootCertList } from "./u2fRootCerts.js";
 const rootCertList = require("./u2fRootCerts.js")
 
 function fidoU2fParseFn(attStmt) {
@@ -36,9 +33,33 @@ function fidoU2fParseFn(attStmt) {
 	return ret;
 }
 
+function arrayBufferEquals(b1, b2) {
+	if (
+		!(b1 instanceof ArrayBuffer) ||
+		!(b2 instanceof ArrayBuffer)
+	) {
+		return false;
+	}
+
+	if (b1.byteLength !== b2.byteLength) {
+		return false;
+	}
+	b1 = new Uint8Array(b1);
+	b2 = new Uint8Array(b2);
+	for (let i = 0; i < b1.byteLength; i++) {
+		if (b1[i] !== b2[i]) return false;
+	}
+	return true;
+}
+
 async function fidoU2fValidateFn() {
 	const x5c = this.authnrData.get("x5c");
 	const parsedAttCert = this.authnrData.get("attCert");
+
+	const aaguid = this.authnrData.get("aaguid");
+	if(aaguid && !arrayBufferEquals(new ArrayBuffer(16), aaguid)){
+		throw new Error("authData.AAGUID is not 0x00 for fido-u2f attestation.");
+	}
 
 	// validate cert chain
 	if (x5c.length > 0) {

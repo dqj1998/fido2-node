@@ -1,15 +1,6 @@
-//import { ab2str, coerceToArrayBuffer, isPem, pemToBase64, tools } from "./utils.js";
-const { ab2str, coerceToArrayBuffer, isPem, pemToBase64, tools } = require("./utilsCore.js")
-/*const utils = require("./utils.js")
-ab2str = utils.ab2str
-coerceToArrayBuffer = utils.coerceToArrayBuffer
-isPem = utils.isPem
-pemToBase64 = utils.pemToBase64
-tools = utils.tools*/
+const { ab2str, coerceToArrayBuffer, isPem, pemToBase64 } = require("./utilsCore.js")
 
-//const tools = require("./toolbox.js")
-
-//require("./utilsCore.js");
+const tools = require("./toolbox.js")
 
 class Certificate {
 	constructor(cert) {
@@ -294,8 +285,8 @@ function resolveOid(id, value) {
 
 function decodeValue(valueBlock) {
 	const blockType = Object.getPrototypeOf(valueBlock).constructor.name;
-	// console.log("blockType", blockType);
-	// console.log("valueBlock", valueBlock);
+	//console.log("blockType", blockType);
+	//console.log("valueBlock", valueBlock);
 	switch (blockType) {
 		case "LocalOctetStringValueBlock":
 			return valueBlock.valueHex;

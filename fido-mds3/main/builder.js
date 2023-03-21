@@ -55,7 +55,13 @@ var Builder = /** @class */ (function () {
      * @param config
      */
     function Builder(config) {
-        var configJson = fs_1.default.readFileSync(path_1.default.resolve(__dirname, '../config/config.json'), 'utf-8');
+        var configJson
+        if(process.env.FIDO_CONFORMANCE_TEST){
+            configJson = fs_1.default.readFileSync(path_1.default.resolve(__dirname, '../config/config-fido-conformance.json'), 'utf-8');
+        } else {
+            configJson = fs_1.default.readFileSync(path_1.default.resolve(__dirname, '../config/config.json'), 'utf-8');
+        }
+        
         var defaultConfig = (0, comment_json_1.parse)(configJson);
         if (config && !config.accessMds) {
             if (config.mdsUrl && !config.mdsFile && !config.mdsJwt) {

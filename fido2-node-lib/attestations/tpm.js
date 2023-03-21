@@ -1,10 +1,7 @@
-//import { arrayBufferEquals, abToBuf, abToInt, abToPem, appendBuffer, coerceToArrayBuffer, coerceToBase64, tools } from "../utils.js";
 const { arrayBufferEquals, abToBuf, abToInt, abToPem, appendBuffer, coerceToArrayBuffer, coerceToBase64, tools } = require("../utils.js")
 
-//import { Certificate } from "../certUtils.js";
-const Certificate = require("../certUtils.js")
+const { Certificate } = require("../certUtils.js")
 
-//import { coseAlgToHashStr, coseAlgToStr } from "../keyUtils.js";
 const { coseAlgToHashStr, coseAlgToStr } = require("../keyUtils.js")
 
 function tpmParseFn(attStmt) {

@@ -1,10 +1,7 @@
-//import { arrayBufferEquals, abToPem, appendBuffer, coerceToArrayBuffer, coerceToBase64, tools } from "../utils.js";
 const { arrayBufferEquals, abToPem, appendBuffer, coerceToArrayBuffer, coerceToBase64, tools } = require("../utils.js")
 
-//import { Certificate, CertManager } from "../certUtils.js";
 const { Certificate, CertManager } = require("../certUtils.js")
 
-//import { u2fRootCerts as rootCertList } from "./u2fRootCerts.js";
 const rootCertList = require("./u2fRootCerts.js")
 
 const mds3 = require("../../mds3.js")
@@ -31,6 +28,9 @@ const algMap = new Map([
 		hashAlg: "SHA-256",
 	}],
 ]);
+
+const authenticator_dangerous_status=["USER_VERIFICATION_BYPASS", "ATTESTATION_KEY_COMPROMISE", 
+		"USER_KEY_REMOTE_COMPROMISE", "USER_KEY_PHYSICAL_COMPROMISE"];
 
 function packedParseFn(attStmt) {
 	const ret = new Map();
@@ -174,6 +174,21 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 		}*/
 	}
 
+	var meta_entry
+	if(aaguid){		
+		//console.log(buf2hex(aaguid)) // for debug
+		meta_entry = await mds3.mds3_client.findByAAGUID(aaguid)
+
+		if(meta_entry.statusReports){
+			meta_entry.statusReports.forEach((status)=>{
+				if(authenticator_dangerous_status.includes(status.status)){
+					throw new Error("Authenticator dangerous status.");
+				}
+			}
+			);
+		}
+	}
+
 	// decode attestation cert
 	const attCert = new Certificate(coerceToBase64(parsedAttCert, "parsedAttCert"));
 	
@@ -192,17 +207,8 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 		}
 
 		let roots = []// Array.from(CertManager.getCerts().values())
-		
-		if(aaguid){
-			try{
-				const aa_entries = await mds3.mds3_client.findByAAGUID(aaguid)
-				if(aa_entries){
-					//aa_entries.attestationRootCertificates.forEach((ent) => roots.unshift(new Certificate(ent)));
-					aa_entries.attestationRootCertificates.forEach((ent) => roots.push(new Certificate(ent)));
-				}
-			}catch (e) {
-				console.log(e.message);
-			}			
+		if(meta_entry){
+			meta_entry.attestationRootCertificates.forEach((ent) => roots.push(new Certificate(ent)));
 		}
 
 		try{
@@ -212,16 +218,12 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 		}		
 	} else {//Verify one cert
 		CertManager.removeAll();
-		if(aaguid){
-			try{
-				console.log(buf2hex(aaguid))
-				const aa_entries = await mds3.mds3_client.findByAAGUID(aaguid)
-				if(aa_entries){
-					aa_entries.attestationRootCertificates.forEach((ent) => CertManager.addCert(ent));
-				}
-			}catch (e) {
-				console.log(e.message);
-			}			
+		if(meta_entry){
+			if(meta_entry.attestationRootCertificates){
+				meta_entry.attestationRootCertificates.forEach((ent) => CertManager.addCert(ent));
+			} else if(meta_entry.metadataStatement && meta_entry.metadataStatement.attestationRootCertificates){
+				meta_entry.metadataStatement.attestationRootCertificates.forEach((ent) => CertManager.addCert(ent));
+			}
 		}
 
 		//for debug
@@ -261,8 +263,8 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 	attCert.info.forEach((v, k) => audit.info.set(k, v));
 	attCert.warning.forEach((v, k) => audit.warning.set(k, v));
 	audit.journal.add("attCert");
-	// console.log("_cert", attCert._cert);
-	// console.log("_cert.subject", attCert._cert.subject);
+	//console.log("_cert", attCert._cert);
+	//console.log("_cert.subject", attCert._cert.subject);
 
 	// from: https://w3c.github.io/webauthn/#packed-attestation
 	// Version MUST be set to 3 (which is indicated by an ASN.1 INTEGER with value 2).

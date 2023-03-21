@@ -131,7 +131,7 @@ async function AppController(request, response) {
         if(username && username.length > 0 && (!user || !user.registered)) {
           response.end(JSON.stringify({
             'status': 'failed',
-            'message': `SvrErr105:Username ${username} does not exist`
+            'errorMessage': `SvrErr105:Username ${username} does not exist`
           }));
           return
         }
@@ -168,6 +168,7 @@ async function AppController(request, response) {
         };
     
         authnOptions.status = 'ok';
+        authnOptions.errorMessage = '';
     
         response.end(JSON.stringify(authnOptions));
       }else if(url.pathname == '/assertion/result'){
@@ -175,6 +176,38 @@ async function AppController(request, response) {
 
         const clientData = JSON.parse(stringfy(body.response.clientDataJSON))
         
+        if(!body.response.authenticatorData){
+          let rtn = {
+            'status': 'failed',
+            'errorMessage': 'SvrErr115:authenticatorData is not found.'
+          }
+          response.end(JSON.stringify(rtn));
+          return
+        } else if(!utils.isBase64Url(body.response.authenticatorData)){
+          let rtn = {
+            'status': 'failed',
+            'errorMessage': 'SvrErr116:authenticatorData is not base64 url encoded.'
+          }
+          response.end(JSON.stringify(rtn));
+          return
+        }
+
+        if(!body.response.signature){
+          let rtn = {
+            'status': 'failed',
+            'errorMessage': 'SvrErr117:signature is not founded.'
+          }
+          response.end(JSON.stringify(rtn));
+          return
+        } else if(!utils.isBase64Url(body.response.signature)){
+          let rtn = {
+            'status': 'failed',
+            'errorMessage': 'SvrErr118:signature is not base64 url encoded.'
+          }
+          response.end(JSON.stringify(rtn));
+          return
+        }
+
         body.response.authenticatorData = new Uint8Array(base64url.toBuffer(body.response.authenticatorData)).buffer; //bufferKeepBase64(body.response.authenticatorData)
         body.response.signature = new Uint8Array(base64url.toBuffer(body.response.signature)).buffer; //bufferKeepBase64((body.response.signature))
         body.response.userHandle = base64url.toBuffer(body.response.userHandle); //new TextDecoder().decode(new Uint8Array(base64url.toBuffer(body.response.userHandle)).buffer)   
@@ -182,6 +215,12 @@ async function AppController(request, response) {
         body.response.clientDataJSON = new Uint8Array(base64url.toBuffer(body.response.clientDataJSON)).buffer; //bufferKeepBase64(body.response.clientDataJSON)
     
         let attestation = null;
+
+        let chkReq = checkResultRequest(body)
+        if(0 < Object.keys(chkReq).length){
+          response.end(JSON.stringify(chkReq));
+          return;
+        }
 
         //let debugId=new Uint8Array(base64url.toBuffer(body.id)).buffer//for debug
         var reqId
@@ -217,7 +256,7 @@ async function AppController(request, response) {
         if( !attestation ){
           let rtn = {
             'status': 'failed',
-            'message': 'SvrErr104:key is not found.'
+            'errorMessage': 'SvrErr104:key is not found.'
           }
           response.end(JSON.stringify(rtn));
           return
@@ -234,8 +273,10 @@ async function AppController(request, response) {
           factor: "either",
           publicKey: attestation.publickey,
           prevCounter: attestation.counter,
-          userHandle: user.id
-        };    
+          userHandle: user.id          
+        };
+
+        body.userVerification = cur_session.fido2lib.config.authenticatorUserVerification
         
         let authnResult = await cur_session.fido2lib.assertionResult(body, assertionExpectations);
         //console.log(authnResult);
@@ -248,7 +289,7 @@ async function AppController(request, response) {
           if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null==unique_device_id ){
             rtn = {
               'status': 'failed',
-              'message': 'SvrErr106:Unique device id is null!'
+              'errorMessage': 'SvrErr106:Unique device id is null!'
             }
           } else {
             if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null != unique_device_id && 
@@ -256,22 +297,23 @@ async function AppController(request, response) {
             //!bindedDeviceKey(cur_session.fido2lib.config.rpId, cur_session.username, attestation.publickey, unique_device_id)){
               rtn = {
                 'status': 'failed',
-                'message': 'SvrErr102:Cannot auth with a unique device binded key from a different device!'
+                'errorMessage': 'SvrErr102:Cannot auth with a unique device binded key from a different device!'
               }
             }else{
               attestation.counter = authnResult.authnrData.get('counter');    
             
               rtn = {
-                'status': 'ok',
+                status: 'ok',
                 credId: body.id,
-                counter: attestation.counter
+                counter: attestation.counter,
+                errorMessage: ''
               }
             }
           }          
         } else {
           rtn = {
             'status': 'failed',
-            'message': 'SvrErr103:Can not authenticate signature!'
+            'errorMessage': 'SvrErr103:Can not authenticate signature!'
           }
         }
         
@@ -375,7 +417,7 @@ async function AppController(request, response) {
         const cur_session = sessions[clientData.challenge]
         delete sessions[clientData.challenge]
 
-        console.log("/attestation/result:" + cur_session.username)
+        //console.log("/attestation/result:" + cur_session.username)
 
         if(null==cur_session.fido2lib)return
 
@@ -390,7 +432,7 @@ async function AppController(request, response) {
         try{
           regResult = await cur_session.fido2lib.attestationResult(body, attestationExpectations);
         }catch(exp){
-          console.log("/attestation/result exp:" + cur_session.username + " msg="+exp.message)
+          //console.log("/attestation/result exp:" + cur_session.username + " msg="+exp.message)
           throw exp
         }
         
@@ -406,7 +448,7 @@ async function AppController(request, response) {
           const guids = enterpriseAaguids.get(cur_session.fido2lib.config.rpId)
           if(!guids || !guids.includes(aaguid) ){
             rtn.status ='failed',
-            rtn.message = 'SvrErr101:Unregistered enterprise authenticator aaguid!'
+            rtn.errorMessage = 'SvrErr101:Unregistered enterprise authenticator aaguid!'
           }
         }
 
@@ -416,12 +458,12 @@ async function AppController(request, response) {
         if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null==unique_device_id ){
           rtn = {
             'status': 'failed',
-            'message': 'SvrErr106:Unique device id is null!'
+            'errorMessage': 'SvrErr106:Unique device id is null!'
           }
         } else {
           //console.log("before pushAttestation status:" + JSON.stringify(rtn))
           if(0 == Object.keys(rtn).length){
-            console.log("before pushAttestation call:" + cur_session.username)
+            //console.log("before pushAttestation call:" + cur_session.username)
             const counter = regResult.authnrData.get('counter');
             await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
               regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
@@ -435,14 +477,15 @@ async function AppController(request, response) {
               rtn.status = 'ok',
               rtn.counter = counter
               rtn.credId = Array.from(new Uint8Array(regResult.authnrData.get('credId')))
+              rtn.errorMessage = '';
             } else {
               rtn.status ='failed',
-              rtn.message = 'SvrErr103:Can not authenticate signature!'
+              rtn.errorMessage = 'SvrErr103:Can not authenticate signature!'
             }  
           }
         }
 
-        console.log("result end:" + cur_session.username + " rtn=" + JSON.stringify(rtn))
+        //console.log("result end:" + cur_session.username + " rtn=" + JSON.stringify(rtn))
 
         response.end(JSON.stringify(rtn));
       }
@@ -513,10 +556,11 @@ async function AppController(request, response) {
         }        
       }      
     }catch(ex){      
-      console.log("EX: " + ex.message)
+      //console.log("EX: " + ex.message)
+      logger.error("EX: " + ex.message)
       let rtn={};
       rtn.status ='failed',
-      rtn.message = 'SvrErr999:Exception:' + ex.message
+      rtn.errorMessage = 'SvrErr999:Exception:' + ex.message
       response.end(JSON.stringify(rtn));
     }
   }
@@ -542,32 +586,32 @@ function checkResultRequest(jsonBody){
   if(!jsonBody.id){
     rtn = {
       'status': 'failed',
-      'message': 'SvrErr107:No ID field in the body of /attestation/result request!'
+      'errorMessage': 'SvrErr107:No ID field in the body of /attestation/result request!'
     }
   }else if(typeof jsonBody.id !== 'string'){
     rtn = {
       'status': 'failed',
-      'message': 'SvrErr112:The ID field is not a DOMString in the body of /attestation/result request!'
+      'errorMessage': 'SvrErr112:The ID field is not a DOMString in the body of /attestation/result request!'
     }
   }else if(!utils.isBase64Url(jsonBody.id)){
     rtn = {
       'status': 'failed',
-      'message': 'SvrErr108:ID field is not Base64Url encoded in the body of /attestation/result request!'
+      'errorMessage': 'SvrErr108:ID field is not Base64Url encoded in the body of /attestation/result request!'
     }
   }else if(!jsonBody.type){
     rtn = {
       'status': 'failed',
-      'message': 'SvrErr109:No TYPE field in the body of /attestation/result request!'
+      'errorMessage': 'SvrErr109:No TYPE field in the body of /attestation/result request!'
     }
   }else if(typeof jsonBody.type !== 'string'){
     rtn = {
       'status': 'failed',
-      'message': 'SvrErr110:The TYPE field is not a DOMString in the body of /attestation/result request!'
+      'errorMessage': 'SvrErr110:The TYPE field is not a DOMString in the body of /attestation/result request!'
     }
   }else if(jsonBody.type !== 'public-key'){
     rtn = {
       'status': 'failed',
-      'message': 'SvrErr111:The TYPE field is not public-key in the body of /attestation/result request!'
+      'errorMessage': 'SvrErr111:The TYPE field is not public-key in the body of /attestation/result request!'
     }
   }
   return rtn;
@@ -596,7 +640,7 @@ function stringfy(input) {
   if(isBase64(input)){
     const cda=new Uint8Array(base64url.toBuffer(input))
     const cltdatatxt = String.fromCharCode.apply("", cda)
-    //console.log('clientDataJSON:'); console.log(cltdatatxt)
+    //console.log('clientDataJSON:'); //console.log(cltdatatxt)
     return cltdatatxt;
   }else if(typeof input == "string") return input
   else{
@@ -620,8 +664,8 @@ function getFido2Lib(rpId, reqBody){
   }
 
   if(null!=reqBody){
-    if(reqBody.authenticatorSelection){
-      opts.authenticatorUserVerification=reqBody.authenticatorSelection.userVerification
+    if(reqBody.userVerification){//}.authenticatorSelection){
+      opts.authenticatorUserVerification=reqBody.userVerification
     }
   }
 
@@ -813,7 +857,7 @@ async function putUserData(rpId, username, userid, displayname, registered){
       'attestation': []
     });
 
-    console.log("putUserData:" + username)
+    //console.log("putUserData:" + username)
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {
@@ -852,7 +896,7 @@ async function putUserData(rpId, username, userid, displayname, registered){
 
 async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id){
   if('mem'==process.env.STORAGE_TYPE){
-    console.log("try pushAttestation:" + username)
+    //console.log("try pushAttestation:" + username)
     database.get(rpId).get(username).attestation.push({
       publickey: publickey,
       counter: counter,
@@ -862,7 +906,7 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       unique_device_id: unique_device_id
     })
 
-    console.log("pushAttestation:" + username)
+    //console.log("pushAttestation:" + username)
   }else if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
       mysql_pool.getConnection((error, connection) => {

@@ -1,31 +1,23 @@
-//import * as utils from "./utils.js";
 const utils = require("./utils.js")
 
-//import { Fido2AssertionResult, Fido2AttestationResult, Fido2Result } from "./response.js";
 const { Fido2AssertionResult, Fido2AttestationResult, Fido2Result } = require("./response.js")
 
 // add 'none' attestation format
-//import { noneAttestation } from "./attestations/none.js";
 const noneAttestation = require("./attestations/none.js").noneAttestation
 
 // add 'packed' attestation format
-//import { packedAttestation } from "./attestations/packed.js";
 const packedAttestation = require("./attestations/packed.js").packedAttestation
 
 // add 'fidoU2F' attestation format
-//import { fidoU2fAttestation } from "./attestations/fidoU2F.js";
 const fidoU2fAttestation = require("./attestations/fidoU2F.js").fidoU2fAttestation
 
 // add 'androidSafetyNet' attestation format
-//import { androidSafetyNetAttestation } from "./attestations/androidSafetyNet.js";
 const androidSafetyNetAttestation = require("./attestations/androidSafetyNet.js").androidSafetyNetAttestation
 
 // add 'tpm' attestation format
-//import { tpmAttestation } from "./attestations/tpm.js";
 const tpmAttestation = require("./attestations/tpm.js").tpmAttestation
 
 // add 'apple' attestation format
-//import { appleAttestation } from "./attestations/apple.js";
 const appleAttestation = require("./attestations/apple.js").appleAttestation
 const {
 	coerceToArrayBuffer,
@@ -36,7 +28,6 @@ const {
 
 const globalAttestationMap = new Map();
 const globalExtensionMap = new Map();
-//const globalMdsCollection = new Map();
 
 class Fido2Lib {
 	/**
@@ -717,7 +708,7 @@ class Fido2Lib {
 
 		if (Object.keys(extensions).length > 0) {
 			options.extensions = extensions;
-		}
+		} else options.extensions = JSON.parse('{"example.extension.bool":true}');
 
 		return options;
 	}

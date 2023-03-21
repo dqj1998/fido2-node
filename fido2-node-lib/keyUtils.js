@@ -1,5 +1,3 @@
-//import { coerceToArrayBuffer, coerceToBase64Url, isPem, pemToBase64, abToPem, tools } from "./utils.js";
-//const theUtils = require("./utils.js")
 var coerceToArrayBuffer
 var coerceToBase64Url
 var isPem
@@ -40,7 +38,7 @@ const coseLabels = {
 			"-257": "RSASSA-PKCS1-v1_5_w_SHA256",
 			"-258": "RSASSA-PKCS1-v1_5_w_SHA384",
 			"-259": "RSASSA-PKCS1-v1_5_w_SHA512",
-			"-65535": "RSASSA-PKCS1-v1_5_w_SHA1",
+			"-65535": "RSASSA-PKCS1-v1_5_w_SHA1"
 		},
 	},
 	4: {
@@ -121,7 +119,7 @@ const algToJWKAlg = {
 	"RSASSA-PKCS1-v1_5_w_SHA256": "RS256",
 	"RSASSA-PKCS1-v1_5_w_SHA384": "RS384",
 	"RSASSA-PKCS1-v1_5_w_SHA512": "RS512",
-	"RSASSA-PKCS1-v1_5_w_SHA1": "RS256",
+	"RSASSA-PKCS1-v1_5_w_SHA1": "RS1",
 	/*
 	PS256-512 is untested 
 	"RSASSA-PSS_w_SHA-256": "PS256",
@@ -158,7 +156,7 @@ const algorithmInputMap = {
 	"RS256": "RSASSA-PKCS1-v1_5",
 	"RS384": "RSASSA-PKCS1-v1_5",
 	"RS512": "RSASSA-PKCS1-v1_5",
-	//"RS1": "RSASSA-PKCS1-v1_5",//dqj
+	"RS1": "RSASSA-PKCS1-v1_5",
 	/*"PS256": "RSASSA-PSS",
 	"PS384": "RSASSA-PSS",
 	"PS512": "RSASSA-PSS",*/

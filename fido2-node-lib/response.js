@@ -1,11 +1,5 @@
-//import * as validator from "./validator.js";
 const validator = require("./validator.js")
-/*import {
-	parseAuthnrAssertionResponse,
-	parseAuthnrAttestationResponse,
-	parseClientResponse,
-	parseExpectations
-} from "./parser.js";*/
+
 const {
 	parseAuthnrAssertionResponse,
 	parseAuthnrAttestationResponse,
@@ -138,7 +132,7 @@ class Fido2AssertionResult extends Fido2Result {
 			"flags",
 			"prevCounter",
 			"publicKey",
-			"userHandle",
+			"userHandle"
 		]);
 		this.optionalExpectations = new Set([
 			"rpId",
