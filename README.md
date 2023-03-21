@@ -6,7 +6,7 @@ https://user-images.githubusercontent.com/4339123/226514144-fa314d24-8b9f-4e00-9
 
 
 # Status
-Supports FIDO2 registration/authentication and some extensions.
+Supports full FIDO2 server spec with extra extensions.
 
 # Standard Features
 ## No requirement for browsers' features on the client side, like Cookies.
