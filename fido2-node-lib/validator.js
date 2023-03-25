@@ -1,14 +1,6 @@
-// deno-lint-ignore-file
-/*import {
-	arrayBufferEquals,
-	appendBuffer,
-	coerceToArrayBuffer,
-	coerceToBase64Url,
-	isBase64Url,
-	isPem,
-	isPositiveInteger,
-	tools
-} from "./utils.js";*/
+const log4js    = require('log4js');
+const logger = log4js.getLogger();
+
 const { default: base64url } = require("base64url");
 const {
 	arrayBufferEquals,
@@ -305,6 +297,8 @@ async function validateOrigin() {
 	let clientDataOrigin = this.clientData.get("origin");
 
 	let origin = tools.checkOrigin(clientDataOrigin);
+
+	logger.debug('expectedOrigin='+expectedOrigin+'; origin='+origin)
 
 	if (origin !== expectedOrigin) {
 		throw new Error("clientData origin did not match expected origin");

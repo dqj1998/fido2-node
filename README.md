@@ -24,6 +24,8 @@ Support aaguid checking for enterprise attestation.
 
 ## Multiple rp ids
 The FIDO spec uses the RP server's domain name to identify RPs. We add an extension that one domain can support multiple RPs by set rp.id when calling attestation/options and assertion/options.
+The limitation of browsers is that the domain set must be a domain suffix of the current domain or equal to the current domain.
+dFido2Lib-android and dFido2Lib-ios SDKs are not this limilation.
 
 ## Unique device binded key
 Cannot auth with a unique device binded key from a different device(another installation of SDK).

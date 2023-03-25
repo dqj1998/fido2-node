@@ -6,7 +6,7 @@
 <script src="jquery-3.5.1.js"></script>
 <script src="tools.js?v=20221015"></script>
 <script>
-    var fidoServerURL='https://mac.dqj-macpro.com'//'http://localhost:8080';//'http://localhost:3000';
+    var fidoServerURL='https://mac.dqj-macpro.com';//'https://fido2.amipro.me/svr';//'https://mac.dqj-macpro.com'//'http://localhost:8080';//'http://localhost:3000';
 
     function checkUid(){
         var uid=$('#uid').val();
@@ -69,13 +69,12 @@
             },
             //attestation: "none",
         };
+        //console.log("Attestation start");
+        //console.log(JSON.stringify(attestationOptions, null, 2));
 
         if(rpId && 0 < rpId.length){
             attestationOptions.rp = {id: rpId}
         }
-
-        //console.log("Attestation start");
-        //console.log(JSON.stringify(attestationOptions, null, 2));
 
         fetch(fidoServerURL + "/attestation/options", {
             method: "POST",
@@ -90,7 +89,7 @@
             //console.log("/attestation/options response: ");
 	        //console.log(JSON.stringify(resp, null, 2));
             if (resp.status === "failed") {
-                throw resp.message;
+                throw resp.errorMessage;
             }else{
                 return navigator.credentials.create(makePublicKey(resp));
             }      
@@ -134,7 +133,7 @@
                 if (resp.status === "ok") {
                     alert("Completed Attestation");
                 } else {
-                    alert(`Server Error: ${resp.message}`);
+                    alert(`Server Error: ${resp.errorMessage}`);
                 }
             } else {
                 alert("Svr result error");
@@ -162,7 +161,7 @@
                     userVerification: "preferred"
                 }
             };
-        }         
+        }
 
         if(rpId && 0 < rpId.length){
             authnOptions.rp = {id: rpId}
@@ -200,8 +199,8 @@
                     console.error("navigator.credentials.get error with code: " + err.code + " and message: " + err.message + " and name: " + err.name);
                 });
             }else{
-                alert('Auth err, '+resp.message)
-                throw 'Auth err, '+resp.message
+                alert('Auth err, '+resp.errorMessage)
+                throw 'Auth err, '+resp.errorMessage
             }            
         })
 	    .then(resp => {
@@ -271,6 +270,8 @@
 <body>
     <h1>FIDO2</h1>
     <h4>rpId: <input id='rpid' name='rpid'></h4>
+    * Keep empty to send rpId with the current domain.<br>
+    * The rpId inputed must be a domain suffix of the current domain or equal to the current domain.
     <h4>User name: <input id='uid' name='uid'></h4>
     <hr>
     <button onclick="regFIDO2();">Reg FIDO2</button><br><br>

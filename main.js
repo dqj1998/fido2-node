@@ -1,5 +1,4 @@
 
-const https = require("https");
 const base64url = require('base64url');
 const crypto    = require('crypto');
 const fs        = require('fs');
@@ -30,11 +29,18 @@ const mysql_pool = mysql.createPool({
   password: process.env.MYSQL_PASSWD || '',
 });
 
-const options = {
-  key: fs.readFileSync(process.env.SSLKEY),
-  cert: fs.readFileSync(process.env.SSLCRT)
-};
-const server = https.createServer(options)
+var server
+if(process.env.SSLKEY && process.env.SSLCRT){
+  const options = {
+    key: fs.readFileSync(process.env.SSLKEY),
+    cert: fs.readFileSync(process.env.SSLCRT)
+  };
+  const https = require("https");
+  server = https.createServer(options)
+}else{
+  const http = require("http");
+  server = http.createServer({})
+} 
 
 const DEFAULT_FIDO_RPID = process.env.DEFAULT_FIDO_RPID
 const FIDO_ORIGIN = process.env.FIDO_ORIGIN
@@ -54,7 +60,6 @@ let mapCredidUsername = {};//Link cred ids with usernames
 let sessions = {};
 
 require("./mds3.js") //init MDS3
-
 
 server.on('request', AppController);
 
@@ -101,7 +106,7 @@ function loadDomains(){
 
 async function AppController(request, response) {
   const url = new URL(request.url, `https://${request.headers.host}`)
-    
+
   if(request.method === 'GET') {
     let html=""
     try{
@@ -114,9 +119,33 @@ async function AppController(request, response) {
     }
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.end(html);
-  }else if(request.method === 'POST') {
+  } else if(request.method === 'OPTIONS') {
     try{
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      response.setHeader("Access-Control-Allow-Methods", "POST");
+      response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, access_token");
+      response.setHeader("Access-Control-Allow-Credentials", "true");
+      response.end('OK');
+      return
+    }catch(ex){      
+      //console.log("EX: " + ex.message)
+      logger.error("EX: " + ex.message)
+      let rtn={};
+      rtn.status ='failed',
+      rtn.errorMessage = 'SvrErr999:Exception:' + ex.message
+      response.end(JSON.stringify(rtn));
+    }
+  } else if(request.method === 'POST') {
+    try{
+      var req_origin = FIDO_ORIGIN, req_host
+      if(request.headers['referer']){
+        const remoteURL = new URL(request.headers['referer'])
+        req_host = remoteURL.host
+        req_origin = remoteURL.protocol + "//" + req_host        
+      }
+
       let real_path;
+      
       if(url.pathname == '/assertion/options'){
         const body = await loadJsonBody(request)
     
@@ -124,7 +153,7 @@ async function AppController(request, response) {
     
         //Client-side discoverable Credential does not pass username
 
-        let rpId=checkRpId(body, response)
+        let rpId=checkRpId(body, req_host, response)
         if(null==rpId)return
 
         let user = await getUserData(rpId, username)
@@ -268,7 +297,7 @@ async function AppController(request, response) {
         let user = await getUserData(cur_session.fido2lib.config.rpId, realUsername)
         let assertionExpectations = {
           challenge: cur_session.challenge,
-          origin: FIDO_ORIGIN,
+          origin: req_origin, //FIDO_ORIGIN,
           rpId: cur_session.fido2lib.config.rpId,
           factor: "either",
           publicKey: attestation.publickey,
@@ -321,7 +350,7 @@ async function AppController(request, response) {
       }else if(url.pathname === '/attestation/options'){
         const body = await loadJsonBody(request)
 
-        let rpId=checkRpId(body, response)
+        let rpId=checkRpId(body, req_host, response)
         if(null==rpId)return
 
         let username = body.username;
@@ -423,7 +452,7 @@ async function AppController(request, response) {
 
         let attestationExpectations = {
             challenge: cur_session.challenge,
-            origin: FIDO_ORIGIN,
+            origin: req_origin, //FIDO_ORIGIN,
             rpId: cur_session.fido2lib.config.rpId,
             factor: "either"
         };
@@ -674,21 +703,27 @@ function getFido2Lib(rpId, reqBody){
   return new f2lib(opts)
 }
 
-function checkRpId(reqBody, response){
+function checkRpId(reqBody, req_host, response){
+  var real_rp_id
   if(reqBody.rp && reqBody.rp.id){
-    if(registeredRps.includes(reqBody.rp.id)){
-      return reqBody.rp.id
-    }else{
-      response.end(
-        JSON.stringify({
-          'status': 'failed',
-          'message': `No exist rp.id: ${reqBody.rp.id}`
-        })
-      );
-        //JSON.stringify({"status": "failed", "message":"No exist rp.id:"+reqBody.rp.id}));
-      return null
-    }
-  } else return DEFAULT_FIDO_RPID
+    real_rp_id = reqBody.rp.id
+  } else if(req_host){
+    real_rp_id = req_host
+  } else real_rp_id = DEFAULT_FIDO_RPID
+
+  logger.debug('checkRpId real_rp_id=' + real_rp_id)
+
+  if(registeredRps.includes(real_rp_id)){
+    return real_rp_id
+  }else{
+    response.end(
+      JSON.stringify({
+        'status': 'failed',
+        'errorMessage': `No exist rp.id: ${real_rp_id}`
+      })
+    );
+    return null
+  }
 }
 
 async function loadJsonBody(request){

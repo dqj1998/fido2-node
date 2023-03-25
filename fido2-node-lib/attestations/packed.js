@@ -179,7 +179,7 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 		//console.log(buf2hex(aaguid)) // for debug
 		meta_entry = await mds3.mds3_client.findByAAGUID(aaguid)
 
-		if(meta_entry.statusReports){
+		if(meta_entry && meta_entry.statusReports){
 			meta_entry.statusReports.forEach((status)=>{
 				if(authenticator_dangerous_status.includes(status.status)){
 					throw new Error("Authenticator dangerous status.");
