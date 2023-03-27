@@ -140,11 +140,16 @@ async function AppController(request, response) {
       var req_origin = FIDO_ORIGIN, req_host
       if(request.headers['referer']){
         const remoteURL = new URL(request.headers['referer'])
-        req_host = remoteURL.host
+        req_host = remoteURL.hostname
         req_origin = remoteURL.protocol + "//" + req_host        
       }
 
       let real_path;
+
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      response.setHeader("Access-Control-Allow-Methods", "POST");
+      response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, access_token");
+      response.setHeader("Access-Control-Allow-Credentials", "true");
       
       if(url.pathname == '/assertion/options'){
         const body = await loadJsonBody(request)
@@ -160,7 +165,7 @@ async function AppController(request, response) {
         if(username && username.length > 0 && (!user || !user.registered)) {
           response.end(JSON.stringify({
             'status': 'failed',
-            'errorMessage': `SvrErr105:Username ${username} does not exist`
+            'errorMessage': `SvrErr105:Username ${username} does not exist!`
           }));
           return
         }
@@ -208,14 +213,14 @@ async function AppController(request, response) {
         if(!body.response.authenticatorData){
           let rtn = {
             'status': 'failed',
-            'errorMessage': 'SvrErr115:authenticatorData is not found.'
+            'errorMessage': 'SvrErr115:authenticatorData is not found!'
           }
           response.end(JSON.stringify(rtn));
           return
         } else if(!utils.isBase64Url(body.response.authenticatorData)){
           let rtn = {
             'status': 'failed',
-            'errorMessage': 'SvrErr116:authenticatorData is not base64 url encoded.'
+            'errorMessage': 'SvrErr116:authenticatorData is not base64 url encoded!'
           }
           response.end(JSON.stringify(rtn));
           return
@@ -224,14 +229,14 @@ async function AppController(request, response) {
         if(!body.response.signature){
           let rtn = {
             'status': 'failed',
-            'errorMessage': 'SvrErr117:signature is not founded.'
+            'errorMessage': 'SvrErr117:signature is not found!'
           }
           response.end(JSON.stringify(rtn));
           return
         } else if(!utils.isBase64Url(body.response.signature)){
           let rtn = {
             'status': 'failed',
-            'errorMessage': 'SvrErr118:signature is not base64 url encoded.'
+            'errorMessage': 'SvrErr118:signature is not base64 url encoded!'
           }
           response.end(JSON.stringify(rtn));
           return
@@ -285,7 +290,7 @@ async function AppController(request, response) {
         if( !attestation ){
           let rtn = {
             'status': 'failed',
-            'errorMessage': 'SvrErr104:key is not found.'
+            'errorMessage': 'SvrErr104:key is not found!'
           }
           response.end(JSON.stringify(rtn));
           return
@@ -326,7 +331,7 @@ async function AppController(request, response) {
             //!bindedDeviceKey(cur_session.fido2lib.config.rpId, cur_session.username, attestation.publickey, unique_device_id)){
               rtn = {
                 'status': 'failed',
-                'errorMessage': 'SvrErr102:Cannot auth with a unique device binded key from a different device!'
+                'errorMessage': 'SvrErr102:Cannot auth with a unique device bound key from a different device!'
               }
             }else{
               attestation.counter = authnResult.authnrData.get('counter');    

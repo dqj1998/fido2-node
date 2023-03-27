@@ -103,7 +103,7 @@ function checkOrigin(str) {
 		throw new Error("origin is not a valid eTLD+1");
 	}
 
-	return origin;
+	return originUrl.protocol+"//"+originUrl.hostname;//No need port number
 }
 
 function checkUrl(value, name, rules = {}) {
