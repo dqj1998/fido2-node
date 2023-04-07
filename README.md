@@ -66,7 +66,7 @@ Body is JSON with MNG_TOKEN:
 * For security, you can deny external access to /mng on your firewall.
 
 # FIDO Conformance test
-We passed the test of FIDO Conformance Tools v1.7.10 || FIDO2 Server - MDS3
+We passed the latest version of FIDO Conformance Tools with MDS3
 
 ## Preperations
 1. Download Metadata by clicking DOWNLOAD TEST METADATA on FIDO conformance tools
