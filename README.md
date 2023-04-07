@@ -72,3 +72,8 @@ We passed the test of FIDO Conformance Tools v1.7.10 || FIDO2 Server - MDS3
 ## Preperations
 1. Download Metadata by clicking DOWNLOAD TEST METADATA on FIDO conformance tools
 2. Copy all files into fido-conformance-metadata-statements
+3. Set FIDO_CONFORMANCE_TEST=1 in .env file
+4. Restart fido2-node
+
+# Troubleshoot
+## AxiosError at booting when opened FIDO_CONFORMANCE_TEST=1: This is caused by expired MDS3 BLOB download url in config-fido-conformance.json
