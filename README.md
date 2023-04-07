@@ -1,8 +1,7 @@
 # fido2-node
-A node.js FIDO2/WebAuthn server passed FIDO Conformance Tool 1.7.10
+A node.js FIDO2/WebAuthn server passed FIDO Conformance Tool 1.7.11
 
-
-https://user-images.githubusercontent.com/4339123/226514144-fa314d24-8b9f-4e00-92a3-360c5cb01120.mp4
+https://user-images.githubusercontent.com/4339123/230692122-d19b6154-d094-46d6-b6b7-31aabaeb9cce.mp4
 
 
 # Status
