@@ -75,4 +75,5 @@ We passed the test of FIDO Conformance Tools v1.7.10 || FIDO2 Server - MDS3
 4. Restart fido2-node
 
 # Troubleshoot
-## AxiosError at booting when opened FIDO_CONFORMANCE_TEST=1: This is caused by expired MDS3 BLOB download url in config-fido-conformance.json
+## AxiosError at booting when opened FIDO_CONFORMANCE_TEST=1
+This is caused by expired MDS3 BLOB download url in config-fido-conformance.json
