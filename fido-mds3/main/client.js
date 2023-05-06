@@ -254,6 +254,7 @@ var Client = /** @class */ (function () {
                         for (_i = 0, _a = this.entries; _i < _a.length; _i++) {
                             ent = _a[_i];
                             const ent_id = ent.aaguid ? ent.aaguid.replaceAll('-', ''): null
+                            //console.log('ent.aaguid='+ent_id)
                             if ( ent_id && ent_id === the_id) {
                                 return [2 /*return*/, ent];
                             }

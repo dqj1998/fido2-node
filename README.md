@@ -32,6 +32,65 @@ Open/close this feature by the boolean config of device_bind_key in domain.json.
 Usually, this feature is to force disable key synchronization among devices to gain a more robust security level.
 dFido2Lib-ios and dFido2Lib-android SDKs support this feature.
 
+# User device APIs
+
+## List user's devices
+/usr/dvc/lst
+
+Parameters required in JSON of HTTP request body: 
+
+session: Session ID created by FIDO2 registration or authentication API. Finding user by this session ID.
+
+rpID: (optional)Client domain will be used if not set
+
+Return in JSON:
+
+session: Session ID the same as request
+
+status:  always ok
+
+devices: The list of the user's devices
+
+There are JSOn fields below in one element of device list:
+
+device_id: The ID of device
+
+userAgent: Browser user agent information
+
+desc: The description of this aaguid in MDS3 if it's a reistered aaguid
+
+registered_time: The time of the device registered
+
+## Remove an user device
+/usr/dvc/rm
+
+Parameters required in JSON of HTTP request body: 
+
+session: Session ID created by FIDO2 registration or authentication API. Finding user by this session ID.
+
+rpID: (optional)Client domain will be used if not set
+
+device_id: The dvice ID to remove
+
+Return in JSON:
+
+session: Session ID the same as request
+
+status:  ok or fail
+
+remain_count: How may devices remain in this user's list after removing
+
+# User session API
+/usr/validsession
+
+Validating if a session ID is alive. Client web site can use this to manage user session.
+
+Parameters required in JSON of HTTP request body: 
+
+session: Session ID created by FIDO2 registration or authentication API. Finding user by this session ID.
+
+rpID: (optional)Client domain will be used if not set
+
 # Storage
 Stoarge type is set by STORAGE_TYPE in .env
 

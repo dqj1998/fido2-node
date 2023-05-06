@@ -51,21 +51,31 @@ var registeredRps
 var enterpriseRps
 var enterpriseAaguids
 var deviceBindedKeys
+var userSessionActiveTimeout
+var userSessionHardTimeout
+var processTimeout
 
 let database = new Map();//use json as DB, all data will lost after restart program.
+
+let user_sessions = new Map();
 
 loadDomains();
 
 let mapCredidUsername = {};//Link cred ids with usernames
 let sessions = {};
 
-require("./mds3.js") //init MDS3
+const {mds3_client} = require("./mds3.js")
 
 server.on('request', AppController);
 
 server.listen(port);
 //console.log(`Started server: ${port}`);
 logger.info(`Started server: ${port}`);
+
+setInterval(function(){
+    clearTimeoutSessions();
+  }, 
+  60*1000);
 
 function loadDomains(){
   domains_conf = JSON.parse(fs.readFileSync(DOMAIN_JSON_FN, 'utf8'));
@@ -74,8 +84,11 @@ function loadDomains(){
   enterpriseRps = [];
   enterpriseAaguids = new Map();
   deviceBindedKeys = new Map();
+  userSessionActiveTimeout = new Map(); //Seconds
+  userSessionHardTimeout = new Map(); //Seconds
+  processTimeout = new Map(); //ms
 
-  domains_conf.domains.forEach(element => {  
+  domains_conf.domains.forEach(element => {
     registeredRps.push(element.domain)
     if(element.enterprise){
       enterpriseRps.push(element.domain)
@@ -87,21 +100,25 @@ function loadDomains(){
 
     if(element.device_bind_key)deviceBindedKeys.set(element.domain, element.device_bind_key)
     else deviceBindedKeys.set(element.domain, false)
+
+    if(element.user_session_active_timeout)userSessionActiveTimeout.set(element.domain, element.user_session_active_timeout)
+    else userSessionActiveTimeout.set(element.domain, 15*60) //Seconds
+    if(element.user_session_hard_timeout)userSessionHardTimeout.set(element.domain, element.user_session_hard_timeout)
+    else userSessionHardTimeout.set(element.domain, 24*60*60) //Seconds
+    if(element.process_timeout)processTimeout.set(element.domain, element.process_timeout*1000)
+    else processTimeout.set(element.domain, 10*60*1000) //ms
   });
+}
+  
+function getDomainJSON(domain){
+  domains_conf = JSON.parse(fs.readFileSync(DOMAIN_JSON_FN, 'utf8'));
 
-  if('mem' == process.env.STORAGE_TYPE){
-    registeredRps.forEach(element => {
-      if(!database.get(element)) database.set(element, new Map());      
-    });
-    for (const key of database.keys()) {
-      if( 0 > registeredRps.indexOf(key) ){
-        database.delete(key)
-      }
+  domains_conf.domains.forEach(element => {
+    if(element.domain == domain){
+      return element
     }
-  }else if('mysql' == process.env.STORAGE_TYPE){
-    setRps(registeredRps);
-  }
-
+  });
+  return null
 }
 
 async function AppController(request, response) {
@@ -110,10 +127,11 @@ async function AppController(request, response) {
   if(request.method === 'GET') {
     let html=""
     try{
-        let real_path;
+        /*let real_path;
         if(url.pathname === '/')real_path='fido2.html'
         else real_path = url.pathname
-        html = require('fs').readFileSync('views/'+real_path);
+        html = require('fs').readFileSync('views/'+real_path);*/
+        html = require('fs').readFileSync('views/'+url.pathname);
     }catch(ex){
         html=ex.message
     }
@@ -270,8 +288,8 @@ async function AppController(request, response) {
         var attestations;
         if(sessions[clientData.challenge].username && sessions[clientData.challenge].username.length > 0){          
           realUsername = sessions[clientData.challenge].username
-        }else if(mapCredidUsername[reqId]){//Client-side discoverable Credential process
-          realUsername = mapCredidUsername[reqId];
+        }else {
+          realUsername = await discoverUserName(reqId)//Client-side discoverable Credential process
         }
 
         if(null==sessions[clientData.challenge].fido2lib)return
@@ -333,13 +351,17 @@ async function AppController(request, response) {
                 'status': 'failed',
                 'errorMessage': 'SvrErr102:Cannot auth with a unique device bound key from a different device!'
               }
-            }else{
+            }else{              
+              const session_id = await generateUserSession(cur_session.fido2lib.config.rpId, realUsername)
+
               attestation.counter = authnResult.authnrData.get('counter');    
             
               rtn = {
                 status: 'ok',
                 credId: body.id,
                 counter: attestation.counter,
+                username: realUsername,
+                session: session_id,
                 errorMessage: ''
               }
             }
@@ -421,7 +443,7 @@ async function AppController(request, response) {
 
       }else if( url.pathname == '/attestation/result'){
         const body = await loadJsonBody(request)
-        
+
         let rtn={};
 
         let chkReq = checkResultRequest(body)
@@ -501,17 +523,20 @@ async function AppController(request, response) {
             const counter = regResult.authnrData.get('counter');
             await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
               regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
-              new Uint8Array(credId), aaguid, unique_device_id);
+              new Uint8Array(credId), aaguid, unique_device_id, request.headers['user-agent']?request.headers['user-agent']:"");
             
             mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
             
             if(regResult.audit.complete) {
               await setRegistered(cur_session.fido2lib.config.rpId, cur_session.username, true)         
         
+              const session_id = await generateUserSession(cur_session.fido2lib.config.rpId, cur_session.username)
+
               rtn.status = 'ok',
               rtn.counter = counter
               rtn.credId = Array.from(new Uint8Array(regResult.authnrData.get('credId')))
               rtn.errorMessage = '';
+              rtn.session = session_id;
             } else {
               rtn.status ='failed',
               rtn.errorMessage = 'SvrErr103:Can not authenticate signature!'
@@ -523,7 +548,51 @@ async function AppController(request, response) {
 
         response.end(JSON.stringify(rtn));
       }
-      // ====== Management methods ======
+      // ====== User Management methods ======
+      else if( url.pathname.startsWith('/usr/') ){
+        const body = await loadJsonBody(request)
+
+        let rpId=checkRpId(body, req_host, response)
+        if(null==rpId)return
+
+        const validsession = body.session && await checkUserSession(rpId, body.session)
+
+        if( url.pathname == '/usr/validsession' ){//valid user's session
+          var rtn = {
+            status:validsession?"ok":"fail"
+          }
+          response.end(JSON.stringify(rtn));
+          return
+        }
+
+        if(!validsession){
+          logger.warn('Somebody tried to access usr path:('+request.socket.remoteAddress+') without user session.');
+          var rtn = {
+            errorMessage:"SvrErr119: No user session!"
+          }
+          response.end(JSON.stringify(rtn));
+          return
+        }
+
+        if( url.pathname == '/usr/dvs/lst' ){//list user's devices
+          const lst = await listUserDevices(rpId, body.session)
+          var rtn = {
+            session:body.session,
+            devices:lst,
+            status:"ok"
+          }
+          response.end(JSON.stringify(rtn));
+        }else if( url.pathname == '/usr/dvs/rm' ){//remove user's devices
+          const del = await delUserDevices(rpId, body.session, body.device_id)
+          var rtn = {
+            session:body.session,
+            status:del>=0?"ok":"fail",
+            remain_count:del
+          }
+          response.end(JSON.stringify(rtn));
+        }  
+      }
+      // ====== System Management methods ======
       // There are json examples in examples folder
       else if( url.pathname.startsWith('/mng/') ){
         const body = await loadJsonBody(request)
@@ -549,10 +618,15 @@ async function AppController(request, response) {
 
             if(body.set){//Set domains
               body.set.forEach(element => {
-                for (let i = 0; i < domains_conf.domains.length; ++i) {
+                let i = 0
+                for (; i < domains_conf.domains.length; ++i) {
                   if( element.domain == domains_conf.domains[i].domain){
                     domains_conf.domains[i]=element;
+                    break;
                   }
+                }
+                if(i==domains_conf.domains.length){
+                  domains_conf.domains.push(element);
                 }
               });
             }
@@ -577,10 +651,19 @@ async function AppController(request, response) {
 
               rtn = {status:'OK'}
             }else{
-              rtn = {status:'error'}
+              rtn = {status:'fail'}
               logger.warn('Backup file does not exist:' + (domains_conf.backupFileName?domains_conf.backupFileName:'null'));
             }
             
+            response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/domain/get' ){
+            var rtn = {status:'fail'}
+            if(body.domain){
+              let conf = getDomainJSON(body.domain)
+              if(!conf){
+                rtn = conf
+              }              
+            }
             response.end(JSON.stringify(rtn));
           }          
         }else{
@@ -690,7 +773,7 @@ function getFido2Lib(rpId, reqBody){
 
   var opts = {
     rpId: rp,
-    timeout: 300 * 1000 //ms
+    timeout: processTimeout.get(rpId)
   }
 
   if(enterpriseRps.includes(rp)){
@@ -747,6 +830,85 @@ async function loadJsonBody(request){
 }
 
 //Storage methods
+async function checkUserSession(rpId, session_id){
+  var rtn = false;
+  activeUserSession(rpId, session_id);
+  if('mem'==process.env.STORAGE_TYPE){
+    rtn = null != user_sessions.get(session_id)
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('SELECT * from user_sessions where session_id=? and TIMESTAMPDIFF(SECOND, created, NOW()) < ? and TIMESTAMPDIFF(SECOND, actived, NOW()) < ?', 
+            [session_id, userSessionHardTimeout.get(rpId), userSessionActiveTimeout.get(rpId)],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn = 0<results.length
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn;
+}
+
+async function clearTimeoutSessions(){
+  var rtn = false;
+  if('mem'==process.env.STORAGE_TYPE){
+    logger.warn('mem storage does not support clearTimeoutSessions')
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_domain, rp_id from registered_rps where deleted is null',
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      for (const row of results) {
+        await new Promise((resolve, reject) => {
+          const rpid = row.rp_id;
+          const htm = userSessionHardTimeout.get(row.rp_domain)
+          const atm = userSessionActiveTimeout.get(row.rp_domain)
+          connection.query('delete from user_sessions u where exists (select * from registered_users r where r.rp_id = ? and r.user_id = u.user_id) '+
+                ' and (TIMESTAMPDIFF(SECOND, u.created, NOW()) > ? or TIMESTAMPDIFF(SECOND, u.actived, NOW()) > ?)', 
+              [rpid, htm, atm],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+      }
+      
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+}
+
 async function setRps(registeredRps){
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -795,7 +957,7 @@ async function setRps(registeredRps){
         })
       }
     }catch (err) {      
-      logger.error('DB err'+err)
+      logger.error('DB err:'+err)
     } finally {
       connection.release()
     }
@@ -832,7 +994,7 @@ async function getUserData(rpId, username){
         }        
       }else return null
     }catch (err) {      
-      logger.error('DB err'+err)
+      logger.error('DB err:'+err)
     } finally {
       connection.release()
     }
@@ -879,13 +1041,156 @@ async function getAttestationData(rpId, username){
       }
       return rtn
     }catch (err) {      
-      logger.error('DB err'+err)
+      logger.error('DB err:'+err)
     } finally {
       connection.release()
     }
   }else{
     logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }
+}
+
+async function discoverUserName(credId){
+  if('mem'==process.env.STORAGE_TYPE){
+    return mapCredidUsername[credId]
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('SELECT u.username from registered_users u, attestations t '+
+              ' where t.deleted is null and u.deleted is null and t.credid_base64=? and u.user_id=t.user_id ', 
+            [base64url.encode(credId)],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<results.length)return results[0].username
+      else return null
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+}
+
+async function listUserDevices(rpId, session_id){
+  var rtn=[]
+  activeUserSession(rpId, session_id);
+  if('mem'==process.env.STORAGE_TYPE){
+    const atts = database.get(rpId).get(user_sessions.get(session_id)).attestation
+    var index = 0;
+    if(atts){
+      for(let att of atts) {
+        const meta_entry = await mds3_client.findByAAGUID(att.aaguid)      
+        rtn.push({
+          device_id: index,
+          userAgent: att.userAgent?att.userAgent:"",
+          desc: meta_entry && meta_entry.metadataStatement && meta_entry.metadataStatement.description ? 
+              meta_entry.metadataStatement.description:"",
+          registered_time: new Date()
+        })
+        index++;
+      }
+    }    
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('SELECT t.attest_id, t.aaguid, t.user_agent, t.created from attestations t, user_sessions s ' +
+            ' where t.deleted is null and s.user_id=t.user_id '+
+            ' and s.session_id=?', [session_id],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<results.length){
+        for(let elm of results) {  
+          const meta_entry = await mds3_client.findByAAGUID(elm.aaguid)
+          rtn.push({
+            device_id: elm.attest_id,
+            userAgent: elm.userAgent?elm.userAgent:"",
+            desc: meta_entry && meta_entry.metadataStatement && meta_entry.metadataStatement.description ? 
+                meta_entry.metadataStatement.description:"",
+            registered_time: elm.created
+          })
+        }
+      }
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+
+  return rtn
+}
+
+async function delUserDevices(rpId, session_id, device_id){
+  var rtn=-415
+  activeUserSession(rpId, session_id);
+  if('mem'==process.env.STORAGE_TYPE){
+    const att = database.get(rpId).get(user_sessions.get(session_id)).attestation
+    if(att && device_id < att.length){
+      att.splice(device_id, 1);
+      //database.get(rpId).get(user_sessions.get(session_id)).attestation = att;
+      rtn = att.length;
+    }
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {      
+        const results = await new Promise((resolve, reject) => {
+          connection.query('Update attestations set deleted=NOW() ' +
+              ' where attest_id=? ', [device_id],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        });
+
+        const cnt_result = await new Promise((resolve, reject) => {
+          connection.query('SELECT count(*) cnt from attestations a, user_sessions s '+
+                'where a.deleted is null and s.user_id=a.user_id and s.session_id=? ', [session_id],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+        rtn=cnt_result[0].cnt
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+
+  return rtn
 }
 
 async function putUserData(rpId, username, userid, displayname, registered){
@@ -925,7 +1230,7 @@ async function putUserData(rpId, username, userid, displayname, registered){
         })
       }      
     }catch (err) {
-      logger.error('DB err'+err)
+      logger.error('DB err:'+err)
     } finally {
       connection.release()
     }
@@ -934,7 +1239,83 @@ async function putUserData(rpId, username, userid, displayname, registered){
   }
 }
 
-async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id){
+async function generateUserSession(rpId, username){
+  var session_id = uuidv4();
+
+  if('mem'==process.env.STORAGE_TYPE){
+    user_sessions.set(session_id, username)
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const result_userid = await new Promise((resolve, reject) => {
+        connection.query('SELECT user_id from registered_rps p, registered_users u ' +
+            ' where p.deleted is null and u.deleted is null ' +
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<result_userid.length){
+        const results = await new Promise((resolve, reject) => {
+          connection.query('INSERT into user_sessions( session_id, user_id ) values(?,?) ', 
+              [session_id, result_userid[0].user_id],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+          })    
+      }
+    }catch (err) {
+      logger.error('DB err:'+err)
+      session_id = null
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return session_id
+}
+
+async function activeUserSession(rpId, session_id){
+  var rtn = false;
+  if('mem'==process.env.STORAGE_TYPE){
+    logger.warn('mem storage does not support activeUserSession')
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const results = await new Promise((resolve, reject) => {
+        connection.query('update user_sessions set actived = now() where session_id = ? and TIMESTAMPDIFF(SECOND, created, NOW()) < ? and TIMESTAMPDIFF(SECOND, actived, NOW()) < ?', 
+        [session_id, userSessionHardTimeout.get(rpId), userSessionActiveTimeout.get(rpId)],
+        (error, results) => {
+          if (error) reject(error)
+          resolve(results)
+        })
+      })
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+}
+
+async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id, user_agent){
   if('mem'==process.env.STORAGE_TYPE){
     //console.log("try pushAttestation:" + username)
     database.get(rpId).get(username).attestation.push({
@@ -943,6 +1324,7 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       fmt: counter,
       credId: credId,
       aaguid: aaguid,
+      userAgent: user_agent,
       unique_device_id: unique_device_id
     })
 
@@ -967,8 +1349,9 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       })
       if(0<result_userid.length){
         const results = await new Promise((resolve, reject) => {
-          connection.query('INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid, unique_device_id ) values(?,?,?,?,?,?,?) ', 
-              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid, unique_device_id?unique_device_id:''],
+          connection.query(
+            'INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid, unique_device_id, user_agent ) values(?,?,?,?,?,?,?,?) ', 
+              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid, unique_device_id?unique_device_id:'', user_agent],
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -976,7 +1359,7 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
         })
       }
     }catch (err) {  
-      logger.error('DB err'+err)
+      logger.error('DB err:'+err)
     } finally {
       connection.release()
     }
@@ -1007,7 +1390,7 @@ async function setRegistered(rpId, username, registered){
             })
       })
     }catch (err) {      
-      logger.error('DB err'+err)
+      logger.error('DB err:'+err)
     } finally {
       connection.release()
     }
@@ -1043,7 +1426,7 @@ async function bindedDeviceKey(rpId, username, publickey, unique_device_id){
       })
       return 0<result_device.length
     }catch (err) {      
-      logger.error('DB err'+err)
+      logger.error('DB err:'+err)
     } finally {
       connection.release()
     }

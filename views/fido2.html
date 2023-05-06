@@ -234,7 +234,7 @@
 	    .then(resp => {
             if(resp){
             if (resp.status === 'ok') {
-                alert("Authentication succ");
+                alert("Authentication succ. SessionId="+resp.session);
             } else {
                 alert(`Authentication error: ${resp}`)
             }

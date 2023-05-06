@@ -158,21 +158,9 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 	// ToDo: Do something with x5c! Prefixed with _ to avoid linting errors for now
 
 	// make sure our root certs are loaded
-	if (CertManager.getCerts().size === 0) {
-		rootCertList.u2fRootCerts.forEach((cert) => CertManager.addCert(cert));
-
-		/*if(process.env.FIDO_CONFORMANCE_TEST){
-			const ents = mds3.mds3_client.getEntries();
-			if(ents){
-				ents.forEach((ent) => {
-					if(ent.attestationRootCertificates){
-						ent.attestationRootCertificates.forEach((cert) => CertManager.addCert(cert));
-					}
-				}				
-				);
-			}
-		}*/
-	}
+	//if (CertManager.getCerts().size === 0) {
+	//	rootCertList.u2fRootCerts.forEach((cert) => CertManager.addCert(cert));
+	//}
 
 	var meta_entry
 	if(aaguid){		
@@ -216,8 +204,10 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 		} catch (e) {
 			throw e;
 		}		
-	} else {//Verify one cert
+	} else {//Verify one cert		
 		CertManager.removeAll();
+		rootCertList.u2fRootCerts.forEach((cert) => CertManager.addCert(cert));
+
 		if(meta_entry){
 			if(meta_entry.attestationRootCertificates){
 				meta_entry.attestationRootCertificates.forEach((ent) => CertManager.addCert(ent));
@@ -241,7 +231,8 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 			await attCert.verify();
 		} catch (e) {
 			const err = e;
-			if (err.message === "Please provide issuer certificate as a parameter" && CertManager.getCerts().size > 0) {
+			if (err.message === "Please provide issuer certificate as a parameter" && 
+					CertManager.getCerts().size > rootCertList.u2fRootCerts.length) {
 				// err = new Error("Root attestation certificate for this token could not be found. Please contact your security key vendor.");
 				audit.warning.set("attesation-not-validated", "could not validate attestation because the root attestation certification could not be found");
 			} else {
