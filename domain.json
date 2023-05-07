@@ -57,6 +57,8 @@
         {
             "domain": "www.test10.com",
             "process_timeout": "666",
+            "user_session_active_timeout": "999",
+            "user_session_hard_timeout": "88866",
             "device_bind_key": "true",
             "enterprise": "true",
             "enterprise_aaguids": [
@@ -64,15 +66,20 @@
             ]
         },
         {
-            "domain": "www.test11.com",
-            "enterprise": "true",
-            "enterprise_aaguids": [
-                "11aaaaaaaaa888888888999999999000"
-            ]
+            "domain": "www.hot01.com"
         },
         {
-            "domain": "www.hot01.com"
+            "domain": "www.test113.com",
+            "process_timeout": "333",
+            "user_session_active_timeout": "913",
+            "device_bind_key": "true",
+            "enterprise": "true",
+            "enterprise_aaguids": [
+                "33aaaaaaaaa888888888999999999000",
+                "36aaaaaaaaa888888888999999999000",
+                "38aaaaaaaaa888888888999999999000"
+            ]
         }
     ],
-    "backupfile": "domain.json1683361935719"
+    "backupfile": "domain.json1683421068767"
 }

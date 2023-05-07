@@ -111,14 +111,17 @@ function loadDomains(){
 }
   
 function getDomainJSON(domain){
+  var rtn = null
   domains_conf = JSON.parse(fs.readFileSync(DOMAIN_JSON_FN, 'utf8'));
 
-  domains_conf.domains.forEach(element => {
-    if(element.domain == domain){
-      return element
+  for(let i = 0 ; i < domains_conf.domains.length ; i++){
+    if(domains_conf.domains[i].domain == domain){
+      rtn = domains_conf.domains[i]
+      break
     }
-  });
-  return null
+  }
+  
+  return rtn
 }
 
 async function AppController(request, response) {
@@ -660,7 +663,7 @@ async function AppController(request, response) {
             var rtn = {status:'fail'}
             if(body.domain){
               let conf = getDomainJSON(body.domain)
-              if(!conf){
+              if(conf){
                 rtn = conf
               }              
             }
