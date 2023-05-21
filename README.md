@@ -91,6 +91,36 @@ session: Session ID created by FIDO2 registration or authentication API. Finding
 
 rpID: (optional)Client domain will be used if not set
 
+# User recovery session APIs
+
+These APIs help clients generate and validate device registration sessions through which users register their devices without authentication. 
+
+This feature is used for users' recovery when they lose or delete all devices.
+
+## Generate registation session
+/mng/user/regsession
+
+This API has to be called as a management call with MNG_TOKEN. The registration session will timeout in seconds of registration_session_timeout in domain.json config.
+
+Parameters required in JSON of HTTP request body: 
+
+MNG_TOKEN: Management API token
+
+username: The user name the session binds to
+
+Return the registration session Id that can be used in the recovery link sent to users, and get the username in the '/reg/username' API call.
+
+## Get username by session Id
+/reg/username
+
+This API can only be called one time for one session.
+
+Parameters required in JSON of HTTP request body: 
+
+session_id: The registration session Id retuned by '/mng/user/regsession'
+
+Return the username binding to this session.
+
 # Storage
 Stoarge type is set by STORAGE_TYPE in .env
 
