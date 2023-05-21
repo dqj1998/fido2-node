@@ -58,3 +58,27 @@ CREATE TABLE IF NOT EXISTS `user_sessions` (
 
 alter table user_sessions add index user_sessions_IDX1(actived);
 alter table user_sessions add index user_sessions_IDX2(created);
+
+CREATE TABLE IF NOT EXISTS `user_actions` (
+    `action_id` char(40) NOT NULL,
+    `user_id` char(40) NOT NULL,
+    `action_type` tinyint unsigned NOT NULL default 1, -- 0: register, 1: authenticate
+    `action_session` char(50) NOT NULL,  
+    `error` varchar(16) default '', -- ''=succ; error code
+    `created` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`action_id`)
+) ENGINE=MyISAM  DEFAULT CHARSET=ascii COMMENT='user actions';
+
+alter table user_actions add index user_actions_IDX1(action_type);
+alter table user_actions add index user_actions_IDX2(error);
+alter table user_actions add index user_actions_IDX3(action_session);
+alter table user_actions add index user_actions_IDX4(user_id);
+alter table user_actions add index user_actions_IDX5(created);
+
+CREATE TABLE IF NOT EXISTS `registration_sessions` (
+    `session_id` char(40) NOT NULL,
+    `username` varchar(320) NOT NULL, -- can save email addresses
+    `created` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`session_id`)
+) ENGINE=MyISAM  DEFAULT CHARSET=ascii COMMENT='registration sessions';
+alter table registration_sessions add index registration_sessions_IDX1(created);

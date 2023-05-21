@@ -54,6 +54,7 @@ var deviceBindedKeys
 var userSessionActiveTimeout
 var userSessionHardTimeout
 var processTimeout
+var regSessionTimeout
 
 let database = new Map();//use json as DB, all data will lost after restart program.
 
@@ -87,6 +88,7 @@ function loadDomains(){
   userSessionActiveTimeout = new Map(); //Seconds
   userSessionHardTimeout = new Map(); //Seconds
   processTimeout = new Map(); //ms
+  regSessionTimeout = new Map(); //Seconds
 
   domains_conf.domains.forEach(element => {
     registeredRps.push(element.domain)
@@ -107,7 +109,11 @@ function loadDomains(){
     else userSessionHardTimeout.set(element.domain, 24*60*60) //Seconds
     if(element.process_timeout)processTimeout.set(element.domain, element.process_timeout*1000)
     else processTimeout.set(element.domain, 10*60*1000) //ms
+    if(element.registration_session_timeout)regSessionTimeout.set(element.domain, element.registration_session_timeout)
+    else regSessionTimeout.set(element.domain, 15*60) //Seconds
   });
+
+  setRps(registeredRps);
 }
   
 function getDomainJSON(domain){
@@ -313,6 +319,9 @@ async function AppController(request, response) {
             'status': 'failed',
             'errorMessage': 'SvrErr104:key is not found!'
           }
+          if(realUsername){
+            await recordUserAction(sessions[clientData.challenge].fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr104")
+          }
           response.end(JSON.stringify(rtn));
           return
         }
@@ -346,6 +355,7 @@ async function AppController(request, response) {
               'status': 'failed',
               'errorMessage': 'SvrErr106:Unique device id is null!'
             }
+            await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr106")
           } else {
             if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null != unique_device_id && 
               attestation.unique_device_id !== unique_device_id){
@@ -354,6 +364,7 @@ async function AppController(request, response) {
                 'status': 'failed',
                 'errorMessage': 'SvrErr102:Cannot auth with a unique device bound key from a different device!'
               }
+              await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr102")
             }else{              
               const session_id = await generateUserSession(cur_session.fido2lib.config.rpId, realUsername)
 
@@ -374,8 +385,10 @@ async function AppController(request, response) {
             'status': 'failed',
             'errorMessage': 'SvrErr103:Can not authenticate signature!'
           }
+          await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr103")
         }
         
+        await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge)
         response.end(JSON.stringify(rtn));
       }else if(url.pathname === '/attestation/options'){
         const body = await loadJsonBody(request)
@@ -509,6 +522,7 @@ async function AppController(request, response) {
             rtn.status ='failed',
             rtn.errorMessage = 'SvrErr101:Unregistered enterprise authenticator aaguid!'
           }
+          await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge, "SvrErr101")
         }
 
         const unique_device_id = 
@@ -519,6 +533,7 @@ async function AppController(request, response) {
             'status': 'failed',
             'errorMessage': 'SvrErr106:Unique device id is null!'
           }
+          await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge, "SvrErr106")
         } else {
           //console.log("before pushAttestation status:" + JSON.stringify(rtn))
           if(0 == Object.keys(rtn).length){
@@ -543,12 +558,14 @@ async function AppController(request, response) {
             } else {
               rtn.status ='failed',
               rtn.errorMessage = 'SvrErr103:Can not authenticate signature!'
-            }  
+              await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge, "SvrErr103")
+            }             
           }
         }
 
         //console.log("result end:" + cur_session.username + " rtn=" + JSON.stringify(rtn))
 
+        await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge)
         response.end(JSON.stringify(rtn));
       }
       // ====== User Management methods ======
@@ -593,7 +610,7 @@ async function AppController(request, response) {
             remain_count:del
           }
           response.end(JSON.stringify(rtn));
-        }  
+        }
       }
       // ====== System Management methods ======
       // There are json examples in examples folder
@@ -665,16 +682,73 @@ async function AppController(request, response) {
               let conf = getDomainJSON(body.domain)
               if(conf){
                 rtn = conf
+                rtn.status='OK'
               }              
+            }            
+            response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/domain/data' ){
+            var rtn = {status:'fail'}
+            if(body.domains && body.start && body.end){
+              rtn = await getDomainData(body.domains, body.start, body.end)
+              rtn.status='OK'
+            }            
+            response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/data/users' ){
+            var rtn = {status:'fail'}
+            if(body.domains){
+              rtn = await listUsers(body.domains, body.start?body.start:0, body.end?body.end:Number.MAX_SAFE_INTEGER, 
+                    body.search, body.last_created, body.limit?body.limit:20);
+              rtn.status='OK'
             }
             response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/user/delacc' ){
+            var rtn = {status:'fail'}
+            if(body.domains && body.user_id){
+              rtn = await delUser(body.domains, body.user_id);
+              rtn.status='OK'
+            }            
+            response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/user/deldvc' ){
+            var rtn = {status:'fail'}
+            if(body.domains && body.attest_id){
+              rtn = await delDevice(body.domains, body.attest_id);
+            }
+            rtn.status='OK'
+            response.end(JSON.stringify(rtn));          
+          } else if( url.pathname == '/mng/user/regsession' ){
+            var rtn = {status:'fail'}
+            if(body.username){
+              rtn.session_id = await generateRegSession(body.username);
+              rtn.status='OK'
+            }
+            response.end(JSON.stringify(rtn));         
           }          
-        }else{
+        } else{
           logger.warn('Somebody tried to access mng path:('+request.socket.remoteAddress+') with token='+
               (body.MNG_TOKEN?body.MNG_TOKEN:'null'));
           response.end("");
         }        
-      }      
+      }
+      // ====== Registration method ======
+      else if( url.pathname.startsWith('/reg/username') ){
+        const body = await loadJsonBody(request)
+        if(body.session_id ){
+          let rpId=checkRpId(body, req_host, response)
+          if(null==rpId)return
+
+          let unm = await getRegSessionUsername(body.session_id)
+          if(unm){
+            response.end(JSON.stringify({
+                'status': 'ok',
+                'username': unm
+              }));
+          }else{
+            response.end(JSON.stringify({
+              'status': 'failed'
+            }));
+          }
+      }
+    }
     }catch(ex){      
       //console.log("EX: " + ex.message)
       logger.error("EX: " + ex.message)
@@ -867,6 +941,376 @@ async function checkUserSession(rpId, session_id){
   return rtn;
 }
 
+async function getDomainData(domains, start, end){
+  var rtn = {};
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+
+      var results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_id from registered_rps r '+
+              'where '+ domains_where +' deleted is null ', 
+            [],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      var rpids_where = ' r.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) as allc, r.rp_id  from registered_users u, registered_rps r '+
+              'where '+ rpids_where +' and r.rp_id=u.rp_id and u.registered=true and r.deleted is null and u.deleted is null group by r.rp_id ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.total_users = results.length>0?results[0]['allc']:0;
+
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(DISTINCT a.user_id) as actv from user_actions a, registered_users r '+
+              'where '+ rpids_where +' and r.user_id=a.user_id and r.registered=true and r.deleted is null and a.created between ? and ? ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.active_users = results.length>0?results[0]['actv']:0;
+
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+              'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and r.deleted is null and a.created between ? and ? ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.total_auth = results.length>0?results[0]['auth']:0;
+
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+              'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and error<>"" and r.deleted is null and a.created between ? and ? ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.fail_auth = results.length>0?results[0]['auth']:0;
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport getDomainData for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn;
+}
+
+async function listUsers(domains, start, end, search = null, last_created = null, limit = 20){
+  var rtn = {};
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+
+      var results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where '+ domains_where +' deleted is null ', 
+            [],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      //build hashmap of rp_domain and rp_id
+      var rp_domain_rp_id = {}
+      for (const row of results) {
+        rp_domain_rp_id[row.rp_id] = row.rp_domain
+      }
+
+      var rpids_where = ' rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
+      var search_where = search && search.length >0 ? ' username like "%'+search+'%" ':' 1=1 '
+      var last_created_where = last_created && last_created.length >0 ? ' created < "'+last_created+'" ':' 1=1 '
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT user_id, rp_id, username, displayname, created from registered_users '+
+              'where '+ rpids_where + ' and ' + search_where + ' and ' + last_created_where + 
+              ' and registered=true and deleted is null and created between ? and ? order by created desc limit ' + limit, 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      //list user's devices
+      var last_created = null;
+      for (const row of results) {
+        const devices = await new Promise((resolve, reject) => {
+          connection.query('SELECT attest_id, aaguid, user_agent, created from attestations '+
+                'where user_id=? and deleted is null order by created desc',
+              [row.user_id],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+        if(0<devices.length){
+          var devs = []
+          for(let elm of devices) {  
+            const meta_entry = await mds3_client.findByAAGUID(elm.aaguid)            
+            devs.push({
+              device_id: elm.attest_id,
+              userAgent: elm.userAgent?elm.userAgent:"",
+              desc: meta_entry && meta_entry.metadataStatement && meta_entry.metadataStatement.description ? 
+                  meta_entry.metadataStatement.description:"",
+              registered_time: elm.created
+            })
+          }
+          row.devices = devs
+        }
+        row.domain = rp_domain_rp_id[row.rp_id]
+        last_created = row.created
+      }
+      rtn.users = results      
+      rtn.last_created = last_created
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport listUsers for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn;
+}
+
+async function delUser(domains, user_id){
+  var rtn = {};
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+
+      var results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where '+ domains_where +' deleted is null ', 
+            [],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      
+      var rpids_where = ' rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) cnt from registered_users '+
+              'where '+ rpids_where + ' and user_id=? and registered=true and deleted is null ', 
+            [user_id],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      if(0<results.length && 0<results[0].cnt){
+        results = await new Promise((resolve, reject) => {
+          connection.query('update attestations set deleted=now() where user_id=? and deleted is null',
+              [user_id],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+        results = await new Promise((resolve, reject) => {
+          connection.query('update registered_users set deleted=now() where user_id=? and deleted is null',
+              [user_id],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+        rtn.status = 'ok';
+      }else{
+        rtn.status = 'fail';
+      }    
+    }catch (err) {      
+      logger.error('DB err:'+err)
+      rtn.status = 'fail';
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport delUser for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn;
+}
+
+//Delete user's device
+async function delDevice(domains, attest_id){
+  var rtn = {};
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+
+      var results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where '+ domains_where +' deleted is null ', 
+            [],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      var rpids_where = ' u.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) cnt from registered_users u, attestations a '+
+              'where '+ rpids_where + ' and a.attest_id=? and u.registered=true and a.deleted is null and u.deleted is null '+
+              'and u.user_id=a.user_id ', 
+            [attest_id],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      if(0<results.length && 0<results[0].cnt){
+        results = await new Promise((resolve, reject) => {
+          connection.query('update attestations set deleted=now() where attest_id=?',
+              [attest_id],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+        rtn.status = 'ok';
+      }else{
+        rtn.status = 'fail';
+      }    
+    }catch (err) {      
+      logger.error('DB err:'+err)
+      rtn.status = 'fail';
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport delDevice for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn;
+}
+
+async function generateRegSession(username){
+  var session_id = null;
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {   
+           
+      session_id = uuidv4()
+
+      const results = await new Promise((resolve, reject) => {
+      connection.query('INSERT into registration_sessions( session_id, username ) values(?,?) ', 
+          [session_id, username],
+          (error, results) => {
+            if (error) reject(error)
+            resolve(results)
+          })
+      })
+      
+    }catch (err) {
+      logger.error('DB err: '+err)
+      session_id = null
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport generateRegSession for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return session_id
+}
+
+async function getRegSessionUsername(session_id) {
+  var rtn = null
+  if ('mysql' == process.env.STORAGE_TYPE) {
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try { 
+      var results = await new Promise((resolve, reject) => {
+        connection.query('select session_id, username from registration_sessions where session_id = ? ',
+          [session_id],
+          (error, results) => {
+            if (error) reject(error)
+            resolve(results)
+          })
+      })
+      if (0 < results.length) {
+        rtn = results[0].username
+
+        // A session only can be used one time.
+        results = await new Promise((resolve, reject) => {
+        connection.query('delete from registration_sessions where session_id = ? ',
+          [results[0].session_id],
+          (error, results) => {
+            if (error) reject(error)
+            resolve(results)
+          })
+        })
+      }
+    } catch (err) {
+      logger.error('DB err: ' + err)
+      session_id = null
+    } finally {
+      connection.release()
+    }
+  } else {
+    logger.error('Unsupport generateRegSession for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn
+}
+
 async function clearTimeoutSessions(){
   var rtn = false;
   if('mem'==process.env.STORAGE_TYPE){
@@ -895,6 +1339,14 @@ async function clearTimeoutSessions(){
           connection.query('delete from user_sessions u where exists (select * from registered_users r where r.rp_id = ? and r.user_id = u.user_id) '+
                 ' and (TIMESTAMPDIFF(SECOND, u.created, NOW()) > ? or TIMESTAMPDIFF(SECOND, u.actived, NOW()) > ?)', 
               [rpid, htm, atm],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+
+          const regtm = regSessionTimeout.get(row.rp_domain)
+          connection.query('delete from registration_sessions where TIMESTAMPDIFF(SECOND, created, NOW()) > ? ', 
+              [regtm],
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1285,6 +1737,49 @@ async function generateUserSession(rpId, username){
     logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }
   return session_id
+}
+
+async function recordUserAction(rpId, username, action_type, action_session, error = ''){
+  var action_id = uuidv4();
+
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const result_userid = await new Promise((resolve, reject) => {
+        connection.query('SELECT user_id from registered_rps p, registered_users u ' +
+            ' where p.deleted is null and u.deleted is null ' +
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<result_userid.length){
+        const results = await new Promise((resolve, reject) => {
+          connection.query('INSERT into user_actions( action_id, user_id, action_type, action_session, error ) values(?,?,?,?,?) ', 
+              [action_id, result_userid[0].user_id, action_type, action_session, error],
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+          });
+      }
+    }catch (err) {
+      logger.error('DB err:'+err)
+      action_id = null
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport process.env.STORAGE_TYPE for recordUserAction:' + process.env.STORAGE_TYPE);
+  }
+  return action_id
 }
 
 async function activeUserSession(rpId, session_id){
