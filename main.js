@@ -688,8 +688,15 @@ async function AppController(request, response) {
             response.end(JSON.stringify(rtn));
           } else if( url.pathname == '/mng/domain/data' ){
             var rtn = {status:'fail'}
-            if(body.domains && body.start && body.end){
+            if(body.domains && null!=body.start && null!=body.end){
               rtn = await getDomainData(body.domains, body.start, body.end)
+              rtn.status='OK'
+            }            
+            response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/action/data' ){
+            var rtn = {status:'fail'}
+            if(body.domains && null!=body.start && null!=body.end){
+              rtn = await getActionData(body.domains, body.start, body.end)
               rtn.status='OK'
             }            
             response.end(JSON.stringify(rtn));
@@ -698,6 +705,14 @@ async function AppController(request, response) {
             if(body.domains){
               rtn = await listUsers(body.domains, body.start?body.start:0, body.end?body.end:Number.MAX_SAFE_INTEGER, 
                     body.search, body.last_created, body.limit?body.limit:20);
+              rtn.status='OK'
+            }
+            response.end(JSON.stringify(rtn));
+          } else if( url.pathname == '/mng/data/actions' ){
+            var rtn = {status:'fail'}
+            if(body.domains){
+              rtn = await listActions(body.domains, body.start?body.start:0, body.end?body.end:Number.MAX_SAFE_INTEGER, 
+                    body.search, body.last_created, body.fail_only, body.limit?body.limit:20);
               rtn.status='OK'
             }
             response.end(JSON.stringify(rtn));
@@ -722,7 +737,7 @@ async function AppController(request, response) {
               rtn.status='OK'
             }
             response.end(JSON.stringify(rtn));         
-          }          
+          }
         } else{
           logger.warn('Somebody tried to access mng path:('+request.socket.remoteAddress+') with token='+
               (body.MNG_TOKEN?body.MNG_TOKEN:'null'));
@@ -1092,6 +1107,150 @@ async function listUsers(domains, start, end, search = null, last_created = null
         last_created = row.created
       }
       rtn.users = results      
+      rtn.last_created = last_created
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport listUsers for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn;
+}
+
+async function getActionData(domains, start, end){
+  var rtn = {};
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+
+      var results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_id from registered_rps r '+
+              'where '+ domains_where +' deleted is null ', 
+            [],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      var rpids_where = ' r.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '      
+
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+              'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and r.deleted is null and a.created between ? and ? ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.total_auth = results.length>0?results[0]['auth']:0;
+
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+              'where '+ rpids_where +' and r.user_id=a.user_id and action_type=0 and r.registered=true and r.deleted is null and a.created between ? and ? ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.total_reg = results.length>0?results[0]['auth']:0;
+
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+              'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and error<>"" and r.deleted is null and a.created between ? and ? ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.total_auth_fail = results.length>0?results[0]['auth']:0;
+
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+              'where '+ rpids_where +' and r.user_id=a.user_id and action_type=0 and r.registered=true and error<>"" and r.deleted is null and a.created between ? and ? ', 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      rtn.total_reg_fail = results.length>0?results[0]['auth']:0;
+
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unsupport getDomainData for process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
+  return rtn;
+}
+
+async function listActions(domains, start, end, search = null, last_created = null, fail_only = false, limit = 20){
+  var rtn = {};
+  if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+
+      var results = await new Promise((resolve, reject) => {
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where '+ domains_where +' deleted is null ', 
+            [],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      //build hashmap of rp_domain and rp_id
+      var rp_domain_rp_id = {}
+      for (const row of results) {
+        rp_domain_rp_id[row.rp_id] = row.rp_domain
+      }
+
+      var rpids_where = ' rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
+      var search_where = search && search.length >0 ? ' username like "%'+search+'%" ':' 1=1 '
+      var last_created_where = last_created && last_created.length >0 ? ' a.created < "'+last_created+'" ':' 1=1 '
+      var failed_where = fail_only?' error<>"" ':' 1=1 '
+      results = await new Promise((resolve, reject) => {
+        connection.query('SELECT action_id, rp_id, username, displayname, a.created, error, action_type from user_actions a, registered_users r '+
+              'where '+ rpids_where + ' and ' + search_where + ' and ' + last_created_where + ' and ' + failed_where +
+              ' and a.user_id=r.user_id and deleted is null and a.created between ? and ? order by a.created desc limit ' + limit, 
+            [start, end],
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+
+      //list user's devices
+      var last_created = null;
+      for (const row of results) {
+        row.domain = rp_domain_rp_id[row.rp_id]
+        row.err = row.error
+        last_created = row.created
+      }
+      rtn.actions = results      
       rtn.last_created = last_created
     }catch (err) {      
       logger.error('DB err:'+err)
