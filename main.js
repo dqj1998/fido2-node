@@ -1739,7 +1739,7 @@ async function listUserDevices(rpId, session_id){
           const meta_entry = await mds3_client.findByAAGUID(elm.aaguid)
           rtn.push({
             device_id: elm.attest_id,
-            userAgent: elm.userAgent?elm.userAgent:"",
+            userAgent: elm.user_agent?elm.user_agent:"",
             desc: meta_entry && meta_entry.metadataStatement && meta_entry.metadataStatement.description ? 
                 meta_entry.metadataStatement.description:"",
             registered_time: elm.created
