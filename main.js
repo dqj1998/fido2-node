@@ -83,6 +83,7 @@ function loadDomains(){
   
   registeredRps = [];
   enterpriseRps = [];
+  passkeySync = new Map();
   enterpriseAaguids = new Map();
   deviceBindedKeys = new Map();
   userSessionActiveTimeout = new Map(); //Seconds
@@ -92,16 +93,26 @@ function loadDomains(){
 
   domains_conf.domains.forEach(element => {
     registeredRps.push(element.domain)
-    if(element.enterprise){
-      enterpriseRps.push(element.domain)
+    
+    if(element.passkey_sync){
+      passkeySync.set(element.domain, element.passkey_sync)
+      deviceBindedKeys.set(element.domain, false)
+    }else{
+      passkeySync.set(element.domain, false)
 
-      if(element.enterprise_aaguids){
-        enterpriseAaguids.set(element.domain, element.enterprise_aaguids)
+      if(element.device_bind_key)deviceBindedKeys.set(element.domain, element.device_bind_key)
+      else deviceBindedKeys.set(element.domain, false)
+
+      if(element.enterprise){
+        enterpriseRps.push(element.domain)
+  
+        if(element.enterprise_aaguids){
+          enterpriseAaguids.set(element.domain, element.enterprise_aaguids)
+        }
       }
-    }
-
-    if(element.device_bind_key)deviceBindedKeys.set(element.domain, element.device_bind_key)
-    else deviceBindedKeys.set(element.domain, false)
+  
+    } 
+    
 
     if(element.user_session_active_timeout)userSessionActiveTimeout.set(element.domain, element.user_session_active_timeout)
     else userSessionActiveTimeout.set(element.domain, 15*60) //Seconds
@@ -113,7 +124,19 @@ function loadDomains(){
     else regSessionTimeout.set(element.domain, 15*60) //Seconds
   });
 
-  setRps(registeredRps);
+  if('mem' == process.env.STORAGE_TYPE){
+    registeredRps.forEach(element => {
+      if(!database.get(element)) database.set(element, new Map());      
+    });
+    for (const key of database.keys()) {
+      if( 0 > registeredRps.indexOf(key) ){
+        database.delete(key)
+      }
+    }
+  }else if('mysql' == process.env.STORAGE_TYPE){
+    setRps(registeredRps);
+  }
+
 }
   
 function getDomainJSON(domain){
@@ -218,6 +241,14 @@ async function AppController(request, response) {
             })
           }
           authnOptions.allowCredentials = allowCredentials;
+
+          if(passkeySync.get(rpId)){
+            authnOptions.extensions.passkeySync = true
+            authnOptions.extensions.deviceBinded = false
+          }else if(deviceBindedKeys.get(rpId)){
+            authnOptions.extensions.deviceBinded = true
+          }
+
           //console.log(authnOptions);
           logger.debug(authnOptions);
         }
@@ -227,7 +258,7 @@ async function AppController(request, response) {
           'username': username?username:"",
           'fido2lib': fido2Lib,
         };
-    
+
         authnOptions.status = 'ok';
         authnOptions.errorMessage = '';
     
@@ -437,6 +468,18 @@ async function AppController(request, response) {
         if(body.attestation)registrationOptions.attestation = body.attestation
         else if(fido2Lib.config.attestation){
           registrationOptions.attestation = fido2Lib.config.attestation
+        }
+
+        if(passkeySync.get(rpId)){
+          registrationOptions.extensions.passkeySync = true
+          registrationOptions.extensions.deviceBinded = false
+
+          registrationOptions.pubKeyCredParams = [ 
+            {type: "public-key", alg: -7},
+            {type: "public-key", alg: -257}
+          ];
+        }else if(deviceBindedKeys.get(rpId)){
+          registrationOptions.extensions.deviceBinded = true
         }
 
         //console.log(registrationOptions);
