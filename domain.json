@@ -2,14 +2,16 @@
     "domains": [
         {
             "domain": "mac.dqj-macpro.com",
-            "reg_page": "/SampleSite/devices.html"
+            "reg_page": "/SampleSite/devices.html",
+            "passkey_sync": "true"
         },
         {
             "domain": "sample.amipro.me",
             "enterprise": false,
             "user_session_active_timeout": 600,
             "user_session_hard_timeout": 43200,
-            "process_timeout": 900
+            "process_timeout": 900,
+            "passkey_sync": "true"
         },
         {
             "domain": "rp01.abc.com",

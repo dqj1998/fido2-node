@@ -324,18 +324,21 @@ async function AppController(request, response) {
         }          
         body.rawId = reqId.buffer;
 
+        var challenge = stringfy(clientData.challenge)
+        if(!utils.isBase64(challenge))challenge = clientData.challenge //Client may encodebase64 the challenge
+
         var realUsername;
         var attestations;
-        if(sessions[clientData.challenge].username && sessions[clientData.challenge].username.length > 0){          
-          realUsername = sessions[clientData.challenge].username
+        if(sessions[challenge].username && sessions[challenge].username.length > 0){          
+          realUsername = sessions[challenge].username
         }else {
           realUsername = await discoverUserName(reqId)//Client-side discoverable Credential process
         }
 
-        if(null==sessions[clientData.challenge].fido2lib)return
+        if(null==sessions[challenge].fido2lib)return
 
         if(realUsername){
-          attestations = await getAttestationData(sessions[clientData.challenge].fido2lib.config.rpId, realUsername)
+          attestations = await getAttestationData(sessions[challenge].fido2lib.config.rpId, realUsername)
           for( let i = 0 ; attestations && i < attestations.length ; i++ ){          
             let dbId = attestations[i].credId         
             if (dbId.byteLength == reqId.byteLength && equlsArrayBuffer(reqId, dbId)) {
@@ -351,14 +354,14 @@ async function AppController(request, response) {
             'errorMessage': 'SvrErr104:key is not found!'
           }
           if(realUsername){
-            await recordUserAction(sessions[clientData.challenge].fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr104")
+            await recordUserAction(sessions[challenge].fido2lib.config.rpId, realUsername, 1, challenge, "SvrErr104")
           }
           response.end(JSON.stringify(rtn));
           return
         }
-
-        const cur_session = sessions[clientData.challenge]
-        delete sessions[clientData.challenge]
+        
+        const cur_session = sessions[challenge]
+        delete sessions[challenge]
 
         let user = await getUserData(cur_session.fido2lib.config.rpId, realUsername)
         let assertionExpectations = {
@@ -386,7 +389,7 @@ async function AppController(request, response) {
               'status': 'failed',
               'errorMessage': 'SvrErr106:Unique device id is null!'
             }
-            await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr106")
+            await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, challenge, "SvrErr106")
           } else {
             if(deviceBindedKeys.get(cur_session.fido2lib.config.rpId) && null != unique_device_id && 
               attestation.unique_device_id !== unique_device_id){
@@ -395,7 +398,7 @@ async function AppController(request, response) {
                 'status': 'failed',
                 'errorMessage': 'SvrErr102:Cannot auth with a unique device bound key from a different device!'
               }
-              await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr102")
+              await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, challenge, "SvrErr102")
             }else{              
               const session_id = await generateUserSession(cur_session.fido2lib.config.rpId, realUsername)
 
@@ -416,10 +419,10 @@ async function AppController(request, response) {
             'status': 'failed',
             'errorMessage': 'SvrErr103:Can not authenticate signature!'
           }
-          await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge, "SvrErr103")
+          await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, challenge, "SvrErr103")
         }
         
-        await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, clientData.challenge)
+        await recordUserAction(cur_session.fido2lib.config.rpId, realUsername, 1, challenge)
         response.end(JSON.stringify(rtn));
       }else if(url.pathname === '/attestation/options'){
         const body = await loadJsonBody(request)
@@ -529,8 +532,10 @@ async function AppController(request, response) {
         
         //const attestationObject = parser.parseAttestationObject(body.response.attestationObject) //JSON.parse(stringfy(body.response.attestationObject))
 
-        const cur_session = sessions[clientData.challenge]
-        delete sessions[clientData.challenge]
+        var challenge = stringfy(clientData.challenge)
+        if(!utils.isBase64(challenge))challenge = clientData.challenge //Client may encodebase64 the challenge
+        const cur_session = sessions[challenge]
+        delete sessions[challenge]
 
         //console.log("/attestation/result:" + cur_session.username)
 
@@ -565,7 +570,7 @@ async function AppController(request, response) {
             rtn.status ='failed',
             rtn.errorMessage = 'SvrErr101:Unregistered enterprise authenticator aaguid!'
           }
-          await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge, "SvrErr101")
+          await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, challenge, "SvrErr101")
         }
 
         const unique_device_id = 
@@ -576,7 +581,7 @@ async function AppController(request, response) {
             'status': 'failed',
             'errorMessage': 'SvrErr106:Unique device id is null!'
           }
-          await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge, "SvrErr106")
+          await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, challenge, "SvrErr106")
         } else {
           //console.log("before pushAttestation status:" + JSON.stringify(rtn))
           if(0 == Object.keys(rtn).length){
@@ -601,14 +606,14 @@ async function AppController(request, response) {
             } else {
               rtn.status ='failed',
               rtn.errorMessage = 'SvrErr103:Can not authenticate signature!'
-              await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge, "SvrErr103")
+              await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, challenge, "SvrErr103")
             }             
           }
         }
 
         //console.log("result end:" + cur_session.username + " rtn=" + JSON.stringify(rtn))
 
-        await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, clientData.challenge)
+        await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, challenge)
         response.end(JSON.stringify(rtn));
       }
       // ====== User Management methods ======
@@ -1138,7 +1143,7 @@ async function listUsers(domains, start, end, search = null, last_created = null
             const meta_entry = await mds3_client.findByAAGUID(elm.aaguid)            
             devs.push({
               device_id: elm.attest_id,
-              userAgent: elm.userAgent?elm.userAgent:"",
+              userAgent: elm.user_agent?elm.user_agent:"",
               desc: meta_entry && meta_entry.metadataStatement && meta_entry.metadataStatement.description ? 
                   meta_entry.metadataStatement.description:"",
               registered_time: elm.created

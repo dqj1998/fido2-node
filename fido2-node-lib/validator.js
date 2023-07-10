@@ -12,7 +12,8 @@ const {
 	isPem,
 	isPositiveInteger,
 	tools
-} = require("./utils.js")
+} = require("./utils.js");
+//const { stringify } = require('comment-json/index.js');
 
 var Fido2Lib
 
@@ -335,7 +336,7 @@ async function validateGetType() {
 
 async function validateChallenge() {
 	let expectedChallenge = this.expectations.get("challenge");
-	let challenge = this.clientData.get("challenge");
+	var challenge = this.clientData.get("challenge");	
 
 	if (typeof challenge !== "string") {
 		throw new Error("clientData challenge was not a string");
@@ -345,10 +346,14 @@ async function validateChallenge() {
 		throw new TypeError("clientData challenge was not properly encoded base64url");
 	}
 
+	challenge = stringfy(challenge)
+    if(!isBase64(challenge))challenge = this.clientData.get("challenge") //Client may encodebase64 the challenge
+	
 	challenge = challenge.replace(/={1,2}$/, "");
 
 	//console.log("challenge", challenge);
 	//console.log("expectedChallenge", expectedChallenge);
+	logger.debug('expectedChallenge='+expectedChallenge+'; challenge='+challenge)
 	if (challenge !== expectedChallenge) {
 		throw new Error("clientData challenge mismatch");
 	}
@@ -708,6 +713,18 @@ async function validateAudit() {
 
 	return true;
 }
+
+function stringfy(input) {
+	if(isBase64(input)){
+	  const cda=new Uint8Array(base64url.toBuffer(input))
+	  const cltdatatxt = String.fromCharCode.apply("", cda)
+	  //console.log('clientDataJSON:'); //console.log(cltdatatxt)
+	  return cltdatatxt;
+	}else if(typeof input == "string") return input
+	else{
+	  return new TextDecoder().decode(new Uint8Array(input)) //new TextEncoder().encode(input)
+	}
+  }
 
 function attach(o) {
 	let mixins = {
