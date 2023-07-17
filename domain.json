@@ -2,8 +2,7 @@
     "domains": [
         {
             "domain": "mac.dqj-macpro.com",
-            "reg_page": "/SampleSite/devices.html",
-            "passkey_sync": "true"
+            "reg_page": "/SampleSite/devices.html"
         },
         {
             "domain": "sample.amipro.me",
@@ -29,7 +28,8 @@
             "reg_page": "/devices.html",
             "passkey_sync": "true",
             "device_bind_key": "false",
-            "enterprise": "false"
+            "enterprise": "false",
+            "status": "OK"
         },
         {
             "domain": "rp03.abc.com",
@@ -70,7 +70,12 @@
             "process_timeout": "666",
             "user_session_active_timeout": "999",
             "registration_session_timeout": "988"
+        },
+        {
+            "domain": "test1.abc.com",
+            "reg_page": "/dvc.jsp",
+            "device_bind_key": "true"
         }
     ],
-    "backupfile": "domain.json1686995577136"
+    "backupfile": "domain.json1689253849717"
 }

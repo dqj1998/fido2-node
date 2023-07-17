@@ -86,7 +86,7 @@ function checkOrigin(str) {
 	const origin = originUrl.origin;
 
 	if (origin !== str) {
-		throw new Error("origin was malformatted");
+		throw new Error("origin was malformatted:"+origin+" vs "+str);
 	}
 
 	const isLocalhost = (originUrl.hostname == "localhost" ||

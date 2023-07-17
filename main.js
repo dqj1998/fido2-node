@@ -177,9 +177,8 @@ async function AppController(request, response) {
       response.setHeader("Access-Control-Allow-Credentials", "true");
       response.end('OK');
       return
-    }catch(ex){      
-      //console.log("EX: " + ex.message)
-      logger.error("EX: " + ex.message)
+    }catch(ex){
+      logger.error("EX: " + ex.message + ";" + ex.stack)
       let rtn={};
       rtn.status ='failed',
       rtn.errorMessage = 'SvrErr999:Exception:' + ex.message
@@ -814,7 +813,7 @@ async function AppController(request, response) {
     }
     }catch(ex){      
       //console.log("EX: " + ex.message)
-      logger.error("EX: " + ex.message)
+      logger.error("EX: " + ex.message  + ";" + ex.stack)
       let rtn={};
       rtn.status ='failed',
       rtn.errorMessage = 'SvrErr999:Exception:' + ex.message

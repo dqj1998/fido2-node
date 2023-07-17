@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS `attestations` (
     `user_id` char(40) NOT NULL,
     `public_key` text NOT NULL,
     `counter` int default 0,
-    `fmt` varchar(16) NOT NULL,
+    `fmt` varchar(32) NOT NULL,
     `aaguid` varchar(36) NOT NULL,
     `credid_base64` text NOT NULL,
     `unique_device_id` char(36),

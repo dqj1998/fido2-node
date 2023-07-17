@@ -297,6 +297,13 @@ async function validateOrigin() {
 	let expectedOrigin = this.expectations.get("origin");
 	let clientDataOrigin = this.clientData.get("origin");
 
+	logger.debug('expectedOrigin='+expectedOrigin+'; clientDataOrigin='+clientDataOrigin)
+
+	if(clientDataOrigin.startsWith('android:apk-key-hash')){// Android App support
+		this.audit.journal.add("origin");
+		return true
+	}
+
 	let origin = tools.checkOrigin(clientDataOrigin);
 
 	logger.debug('expectedOrigin='+expectedOrigin+'; origin='+origin)
