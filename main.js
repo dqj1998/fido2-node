@@ -1028,8 +1028,8 @@ async function getDomainData(domains, start, end){
 
       var rpids_where = ' r.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as allc, r.rp_id  from registered_users u, registered_rps r '+
-              'where '+ rpids_where +' and r.rp_id=u.rp_id and u.registered=true and r.deleted is null and u.deleted is null group by r.rp_id ', 
+        connection.query('SELECT count(*) as allc from registered_users u, registered_rps r '+
+              'where '+ rpids_where +' and r.rp_id=u.rp_id and u.registered=true and r.deleted is null and u.deleted is null ', 
             [start, end],
             (error, results) => {
               if (error) reject(error)
