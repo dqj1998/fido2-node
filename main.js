@@ -27,7 +27,9 @@ const mysql_pool = mysql.createPool({
   database: process.env.MYSQL_DATABASE || 'fido2_node_db',
   user: process.env.MYSQL_USER || 'root',
   password: process.env.MYSQL_PASSWD || '',
+  stringifyObjects: true,
 });
+var SqlString = require('sqlstring');
 
 var server
 if(process.env.SSLKEY && process.env.SSLCRT){
@@ -90,6 +92,8 @@ function loadDomains(){
   userSessionHardTimeout = new Map(); //Seconds
   processTimeout = new Map(); //ms
   regSessionTimeout = new Map(); //Seconds
+  userVerificationReg = new Map();
+  userVerificationAuth = new Map();
 
   domains_conf.domains.forEach(element => {
     registeredRps.push(element.domain)
@@ -113,6 +117,10 @@ function loadDomains(){
   
     } 
     
+    if(element.uv_reg)userVerificationReg.set(element.domain, element.uv_reg)
+    else userVerificationReg.set(element.domain, "preferred")
+    if(element.uv_auth)userVerificationAuth.set(element.domain, element.uv_auth)
+    else userVerificationAuth.set(element.domain, "preferred")
 
     if(element.user_session_active_timeout)userSessionActiveTimeout.set(element.domain, element.user_session_active_timeout)
     else userSessionActiveTimeout.set(element.domain, 15*60) //Seconds
@@ -225,6 +233,9 @@ async function AppController(request, response) {
         if(!username){//Try discoverable 
           authnOptions["mediation"] = "conditional"
         }*/
+
+        authnOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationAuth);
+
         let challengeTxt = uuidv4()
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
         authnOptions.challenge = challengeBase64 //Array.from(new TextEncoder().encode(challengeTxt))
@@ -445,7 +456,7 @@ async function AppController(request, response) {
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
         registrationOptions.challenge = challengeBase64//Array.from(new TextEncoder().encode(challengeTxt)) //base64url.encode(uuidv4())//use challenge as session id
 
-        registrationOptions.authenticatorSelection = body.authenticatorSelection
+        registrationOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationReg);
 
         //Prevent register same authenticator
         if(user){
@@ -837,6 +848,19 @@ function equlsArrayBuffer(a, b){
   return true 
 }
 
+function setUserVerification(domain, authenticatorSelection, userVerificationMap){
+  var rtn = authenticatorSelection;
+  if(userVerificationMap.get(domain)){
+    if(userVerificationMap.get(domain) != '_client'){
+      rtn.userVerification = userVerificationMap.get(domain)
+    }
+  }else{
+    rtn.userVerification = 'preferred'
+  }
+
+  return rtn;
+}
+
 function checkResultRequest(jsonBody){
   var rtn = {};
   if(!jsonBody.id){
@@ -970,6 +994,8 @@ async function loadJsonBody(request){
 
 //Storage methods
 async function checkUserSession(rpId, session_id){
+  if(typeof rpId != "string" || typeof session_id != "string") return;
+
   var rtn = false;
   activeUserSession(rpId, session_id);
   if('mem'==process.env.STORAGE_TYPE){
@@ -984,8 +1010,8 @@ async function checkUserSession(rpId, session_id){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT * from user_sessions where session_id=? and TIMESTAMPDIFF(SECOND, created, NOW()) < ? and TIMESTAMPDIFF(SECOND, actived, NOW()) < ?', 
-            [session_id, userSessionHardTimeout.get(rpId), userSessionActiveTimeout.get(rpId)],
+        connection.query(SqlString.format('SELECT * from user_sessions where session_id=? and TIMESTAMPDIFF(SECOND, created, NOW()) < ? and TIMESTAMPDIFF(SECOND, actived, NOW()) < ?', 
+            [session_id, userSessionHardTimeout.get(rpId), userSessionActiveTimeout.get(rpId)]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1004,6 +1030,8 @@ async function checkUserSession(rpId, session_id){
 }
 
 async function getDomainData(domains, start, end){
+  if(typeof start != "number" || typeof end != "number") return;
+
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -1017,9 +1045,9 @@ async function getDomainData(domains, start, end){
       var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
 
       var results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_id from registered_rps r '+
+        connection.query(SqlString.format('SELECT rp_id from registered_rps r '+
               'where '+ domains_where +' deleted is null ', 
-            [],
+            []),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1028,9 +1056,9 @@ async function getDomainData(domains, start, end){
 
       var rpids_where = ' r.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as allc from registered_users u, registered_rps r '+
+        connection.query(SqlString.format('SELECT count(*) as allc from registered_users u, registered_rps r '+
               'where '+ rpids_where +' and r.rp_id=u.rp_id and u.registered=true and r.deleted is null and u.deleted is null ', 
-            [start, end],
+            []),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1039,9 +1067,9 @@ async function getDomainData(domains, start, end){
       rtn.total_users = results.length>0?results[0]['allc']:0;
 
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(DISTINCT a.user_id) as actv from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT count(DISTINCT a.user_id) as actv from user_actions a, registered_users r '+
               'where '+ rpids_where +' and r.user_id=a.user_id and r.registered=true and r.deleted is null and a.created between ? and ? ', 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1050,9 +1078,9 @@ async function getDomainData(domains, start, end){
       rtn.active_users = results.length>0?results[0]['actv']:0;
 
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT count(*) as auth from user_actions a, registered_users r '+
               'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and r.deleted is null and a.created between ? and ? ', 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1061,9 +1089,9 @@ async function getDomainData(domains, start, end){
       rtn.total_auth = results.length>0?results[0]['auth']:0;
 
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT count(*) as auth from user_actions a, registered_users r '+
               'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and error<>"" and r.deleted is null and a.created between ? and ? ', 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1082,6 +1110,9 @@ async function getDomainData(domains, start, end){
 }
 
 async function listUsers(domains, start, end, search = null, last_created = null, limit = 20){
+  if(typeof start != "number" || typeof end != "number" || (search && typeof search != "string") 
+      || typeof limit != "number" || (last_created && typeof last_created != "number") ) return;
+
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -1095,9 +1126,9 @@ async function listUsers(domains, start, end, search = null, last_created = null
       var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
 
       var results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
               'where '+ domains_where +' deleted is null ', 
-            [],
+            []),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1114,10 +1145,10 @@ async function listUsers(domains, start, end, search = null, last_created = null
       var search_where = search && search.length >0 ? ' username like "%'+search+'%" ':' 1=1 '
       var last_created_where = last_created && last_created.length >0 ? ' created < "'+last_created+'" ':' 1=1 '
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT user_id, rp_id, username, displayname, created from registered_users '+
+        connection.query(SqlString.format('SELECT user_id, rp_id, username, displayname, created from registered_users '+
               'where '+ rpids_where + ' and ' + search_where + ' and ' + last_created_where + 
               ' and registered=true and deleted is null and created between ? and ? order by created desc limit ' + limit, 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1128,9 +1159,9 @@ async function listUsers(domains, start, end, search = null, last_created = null
       var last_created = null;
       for (const row of results) {
         const devices = await new Promise((resolve, reject) => {
-          connection.query('SELECT attest_id, aaguid, user_agent, created from attestations '+
+          connection.query(SqlString.format('SELECT attest_id, aaguid, user_agent, created from attestations '+
                 'where user_id=? and deleted is null order by created desc',
-              [row.user_id],
+              [row.user_id]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1167,6 +1198,8 @@ async function listUsers(domains, start, end, search = null, last_created = null
 }
 
 async function getActionData(domains, start, end){
+  if(typeof start != "number" || typeof end != "number") return;
+
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -1180,9 +1213,9 @@ async function getActionData(domains, start, end){
       var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
 
       var results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_id from registered_rps r '+
+        connection.query(SqlString.format('SELECT rp_id from registered_rps r '+
               'where '+ domains_where +' deleted is null ', 
-            [],
+            []),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1192,9 +1225,9 @@ async function getActionData(domains, start, end){
       var rpids_where = ' r.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '      
 
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT count(*) as auth from user_actions a, registered_users r '+
               'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and r.deleted is null and a.created between ? and ? ', 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1203,9 +1236,9 @@ async function getActionData(domains, start, end){
       rtn.total_auth = results.length>0?results[0]['auth']:0;
 
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT count(*) as auth from user_actions a, registered_users r '+
               'where '+ rpids_where +' and r.user_id=a.user_id and action_type=0 and r.registered=true and r.deleted is null and a.created between ? and ? ', 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1214,9 +1247,9 @@ async function getActionData(domains, start, end){
       rtn.total_reg = results.length>0?results[0]['auth']:0;
 
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT count(*) as auth from user_actions a, registered_users r '+
               'where '+ rpids_where +' and r.user_id=a.user_id and action_type=1 and r.registered=true and error<>"" and r.deleted is null and a.created between ? and ? ', 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1225,9 +1258,9 @@ async function getActionData(domains, start, end){
       rtn.total_auth_fail = results.length>0?results[0]['auth']:0;
 
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) as auth from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT count(*) as auth from user_actions a, registered_users r '+
               'where '+ rpids_where +' and r.user_id=a.user_id and action_type=0 and r.registered=true and error<>"" and r.deleted is null and a.created between ? and ? ', 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1247,6 +1280,9 @@ async function getActionData(domains, start, end){
 }
 
 async function listActions(domains, start, end, search = null, last_created = null, fail_only = false, limit = 20){
+  if(typeof start != "number" || typeof end != "number" || (search && typeof search != "string") 
+      || typeof limit != "number" || (last_created && typeof last_created != "number") || typeof fail_only != "boolean") return;
+
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -1260,9 +1296,9 @@ async function listActions(domains, start, end, search = null, last_created = nu
       var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
 
       var results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
               'where '+ domains_where +' deleted is null ', 
-            [],
+            []),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1280,10 +1316,10 @@ async function listActions(domains, start, end, search = null, last_created = nu
       var last_created_where = last_created && last_created.length >0 ? ' a.created < "'+last_created+'" ':' 1=1 '
       var failed_where = fail_only?' error<>"" ':' 1=1 '
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT action_id, rp_id, username, displayname, a.created, error, action_type from user_actions a, registered_users r '+
+        connection.query(SqlString.format('SELECT action_id, rp_id, username, displayname, a.created, error, action_type from user_actions a, registered_users r '+
               'where '+ rpids_where + ' and ' + search_where + ' and ' + last_created_where + ' and ' + failed_where +
               ' and a.user_id=r.user_id and deleted is null and a.created between ? and ? order by a.created desc limit ' + limit, 
-            [start, end],
+            [start, end]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1311,6 +1347,8 @@ async function listActions(domains, start, end, search = null, last_created = nu
 }
 
 async function delUser(domains, user_id){
+  if(typeof user_id != "string") return;
+
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -1324,9 +1362,9 @@ async function delUser(domains, user_id){
       var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
 
       var results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
               'where '+ domains_where +' deleted is null ', 
-            [],
+            []),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1335,9 +1373,9 @@ async function delUser(domains, user_id){
       
       var rpids_where = ' rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) cnt from registered_users '+
+        connection.query(SqlString.format('SELECT count(*) cnt from registered_users '+
               'where '+ rpids_where + ' and user_id=? and registered=true and deleted is null ', 
-            [user_id],
+            [user_id]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1346,16 +1384,16 @@ async function delUser(domains, user_id){
 
       if(0<results.length && 0<results[0].cnt){
         results = await new Promise((resolve, reject) => {
-          connection.query('update attestations set deleted=now() where user_id=? and deleted is null',
-              [user_id],
+          connection.query(SqlString.format('update attestations set deleted=now() where user_id=? and deleted is null',
+              [user_id]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
               })
         })
         results = await new Promise((resolve, reject) => {
-          connection.query('update registered_users set deleted=now() where user_id=? and deleted is null',
-              [user_id],
+          connection.query(SqlString.format('update registered_users set deleted=now() where user_id=? and deleted is null',
+              [user_id]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1379,6 +1417,8 @@ async function delUser(domains, user_id){
 
 //Delete user's device
 async function delDevice(domains, attest_id){
+  if(typeof attest_id != "string") return;
+
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -1392,9 +1432,9 @@ async function delDevice(domains, attest_id){
       var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
 
       var results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
               'where '+ domains_where +' deleted is null ', 
-            [],
+            []),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1403,10 +1443,10 @@ async function delDevice(domains, attest_id){
 
       var rpids_where = ' u.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
       results = await new Promise((resolve, reject) => {
-        connection.query('SELECT count(*) cnt from registered_users u, attestations a '+
+        connection.query(SqlString.format('SELECT count(*) cnt from registered_users u, attestations a '+
               'where '+ rpids_where + ' and a.attest_id=? and u.registered=true and a.deleted is null and u.deleted is null '+
               'and u.user_id=a.user_id ', 
-            [attest_id],
+            [attest_id]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1415,8 +1455,8 @@ async function delDevice(domains, attest_id){
 
       if(0<results.length && 0<results[0].cnt){
         results = await new Promise((resolve, reject) => {
-          connection.query('update attestations set deleted=now() where attest_id=?',
-              [attest_id],
+          connection.query(SqlString.format('update attestations set deleted=now() where attest_id=?',
+              [attest_id]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1439,6 +1479,8 @@ async function delDevice(domains, attest_id){
 }
 
 async function generateRegSession(username){
+  if(typeof username != "string") return;
+
   var session_id = null;
   if('mysql'==process.env.STORAGE_TYPE){
     const connection = await new Promise((resolve, reject) => {
@@ -1453,8 +1495,8 @@ async function generateRegSession(username){
       session_id = uuidv4()
 
       const results = await new Promise((resolve, reject) => {
-      connection.query('INSERT into registration_sessions( session_id, username ) values(?,?) ', 
-          [session_id, username],
+      connection.query(SqlString.format('INSERT into registration_sessions( session_id, username ) values(?,?) ', 
+          [session_id, username]),
           (error, results) => {
             if (error) reject(error)
             resolve(results)
@@ -1474,6 +1516,8 @@ async function generateRegSession(username){
 }
 
 async function getRegSessionUsername(session_id) {
+  if(typeof session_id != "string") return;
+
   var rtn = null
   if ('mysql' == process.env.STORAGE_TYPE) {
     const connection = await new Promise((resolve, reject) => {
@@ -1485,8 +1529,8 @@ async function getRegSessionUsername(session_id) {
 
     try { 
       var results = await new Promise((resolve, reject) => {
-        connection.query('select session_id, username from registration_sessions where session_id = ? ',
-          [session_id],
+        connection.query(SqlString.format('select session_id, username from registration_sessions where session_id = ? ',
+          [session_id]),
           (error, results) => {
             if (error) reject(error)
             resolve(results)
@@ -1497,8 +1541,8 @@ async function getRegSessionUsername(session_id) {
 
         // A session only can be used one time.
         results = await new Promise((resolve, reject) => {
-        connection.query('delete from registration_sessions where session_id = ? ',
-          [results[0].session_id],
+        connection.query(SqlString.format('delete from registration_sessions where session_id = ? ',
+          [results[0].session_id]),
           (error, results) => {
             if (error) reject(error)
             resolve(results)
@@ -1531,7 +1575,7 @@ async function clearTimeoutSessions(){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_domain, rp_id from registered_rps where deleted is null',
+        connection.query(SqlString.format('SELECT rp_domain, rp_id from registered_rps where deleted is null'),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1542,17 +1586,17 @@ async function clearTimeoutSessions(){
           const rpid = row.rp_id;
           const htm = userSessionHardTimeout.get(row.rp_domain)
           const atm = userSessionActiveTimeout.get(row.rp_domain)
-          connection.query('delete from user_sessions u where exists (select * from registered_users r where r.rp_id = ? and r.user_id = u.user_id) '+
+          connection.query(SqlString.format('delete from user_sessions u where exists (select * from registered_users r where r.rp_id = ? and r.user_id = u.user_id) '+
                 ' and (TIMESTAMPDIFF(SECOND, u.created, NOW()) > ? or TIMESTAMPDIFF(SECOND, u.actived, NOW()) > ?)', 
-              [rpid, htm, atm],
+              [rpid, htm, atm]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
               })
 
           const regtm = regSessionTimeout.get(row.rp_domain)
-          connection.query('delete from registration_sessions where TIMESTAMPDIFF(SECOND, created, NOW()) > ? ', 
-              [regtm],
+          connection.query(SqlString.format('delete from registration_sessions where TIMESTAMPDIFF(SECOND, created, NOW()) > ? ', 
+              [regtm]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1581,7 +1625,7 @@ async function setRps(registeredRps){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_domain from registered_rps where deleted is null',
+        connection.query(SqlString.format('SELECT rp_domain from registered_rps where deleted is null'),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1599,8 +1643,8 @@ async function setRps(registeredRps){
     
       for (const element of newRps) {
         const results = await new Promise((resolve, reject) => {
-          connection.query('INSERT into registered_rps( rp_domain ) values(?)', 
-              [element],
+          connection.query(SqlString.format('INSERT into registered_rps( rp_domain ) values(?)', 
+              [element]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1609,8 +1653,8 @@ async function setRps(registeredRps){
       }
       for (const element of delRps) {
         const results = await new Promise((resolve, reject) => {
-          connection.query('update registered_rps set deleted=NOW() where rp_domain =?', 
-              [element],
+          connection.query(SqlString.format('update registered_rps set deleted=NOW() where rp_domain =?', 
+              [element]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1626,6 +1670,8 @@ async function setRps(registeredRps){
 }
 
 async function getUserData(rpId, username){
+  if(typeof rpId != "string" || typeof username != "string") return;
+
   if('mem'==process.env.STORAGE_TYPE){
     return database.get(rpId).get(username)
   }else if('mysql'==process.env.STORAGE_TYPE){
@@ -1638,10 +1684,10 @@ async function getUserData(rpId, username){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT user_id, username, displayname, registered '+
+        connection.query(SqlString.format('SELECT user_id, username, displayname, registered '+
             ' from registered_rps p, registered_users u ' +
             ' where p.deleted is null and u.deleted is null ' +
-            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1665,6 +1711,8 @@ async function getUserData(rpId, username){
 }
 
 async function getAttestationData(rpId, username){
+  if(typeof rpId != "string" || typeof username != "string") return;
+
   if('mem'==process.env.STORAGE_TYPE){
     return database.get(rpId).get(username).attestation
   }else if('mysql'==process.env.STORAGE_TYPE){
@@ -1677,11 +1725,11 @@ async function getAttestationData(rpId, username){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT public_key, counter, fmt, aaguid, credid_base64, t.unique_device_id '+
+        connection.query(SqlString.format('SELECT public_key, counter, fmt, aaguid, credid_base64, t.unique_device_id '+
             ' from registered_rps p, registered_users u, attestations t ' +
             ' where p.deleted is null and u.deleted is null and t.deleted is null ' +
             ' and p.rp_id=u.rp_id and t.user_id=u.user_id '+
-            ' and p.rp_domain=? and u.username=?', [rpId, username],
+            ' and p.rp_domain=? and u.username=?', [rpId, username]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1724,9 +1772,9 @@ async function discoverUserName(credId){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT u.username from registered_users u, attestations t '+
+        connection.query(SqlString.format('SELECT u.username from registered_users u, attestations t '+
               ' where t.deleted is null and u.deleted is null and t.credid_base64=? and u.user_id=t.user_id ', 
-            [base64url.encode(credId)],
+            [base64url.encode(credId)]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1745,6 +1793,8 @@ async function discoverUserName(credId){
 }
 
 async function listUserDevices(rpId, session_id){
+  if(typeof rpId != "string" || typeof session_id != "string") return;
+
   var rtn=[]
   activeUserSession(rpId, session_id);
   if('mem'==process.env.STORAGE_TYPE){
@@ -1773,9 +1823,9 @@ async function listUserDevices(rpId, session_id){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('SELECT t.attest_id, t.aaguid, t.user_agent, t.created from attestations t, user_sessions s ' +
+        connection.query(SqlString.format('SELECT t.attest_id, t.aaguid, t.user_agent, t.created from attestations t, user_sessions s ' +
             ' where t.deleted is null and s.user_id=t.user_id '+
-            ' and s.session_id=?', [session_id],
+            ' and s.session_id=?', [session_id]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1806,6 +1856,8 @@ async function listUserDevices(rpId, session_id){
 }
 
 async function delUserDevices(rpId, session_id, device_id){
+  if(typeof rpId != "string" || typeof session_id != "string" || typeof device_id != "string") return;
+
   var rtn=-415
   activeUserSession(rpId, session_id);
   if('mem'==process.env.STORAGE_TYPE){
@@ -1825,8 +1877,8 @@ async function delUserDevices(rpId, session_id, device_id){
 
     try {      
         const results = await new Promise((resolve, reject) => {
-          connection.query('Update attestations set deleted=NOW() ' +
-              ' where attest_id=? ', [device_id],
+          connection.query(SqlString.format('Update attestations set deleted=NOW() ' +
+              ' where attest_id=? ', [device_id]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1834,8 +1886,8 @@ async function delUserDevices(rpId, session_id, device_id){
         });
 
         const cnt_result = await new Promise((resolve, reject) => {
-          connection.query('SELECT count(*) cnt from attestations a, user_sessions s '+
-                'where a.deleted is null and s.user_id=a.user_id and s.session_id=? ', [session_id],
+          connection.query(SqlString.format('SELECT count(*) cnt from attestations a, user_sessions s '+
+                'where a.deleted is null and s.user_id=a.user_id and s.session_id=? ', [session_id]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1855,6 +1907,9 @@ async function delUserDevices(rpId, session_id, device_id){
 }
 
 async function putUserData(rpId, username, userid, displayname, registered){
+  if(typeof rpId != "string" || typeof username != "string" || typeof userid != "string"
+      || typeof displayname != "string" || typeof registered != "boolean") return;
+
   if('mem'==process.env.STORAGE_TYPE){
     database.get(rpId).set(username,{
       'displayname': displayname,
@@ -1874,7 +1929,7 @@ async function putUserData(rpId, username, userid, displayname, registered){
 
     try {
       const ipid_result = await new Promise((resolve, reject) => {
-        connection.query('SELECT rp_id from registered_rps where deleted is null and rp_domain=? ', [rpId],
+        connection.query(SqlString.format('SELECT rp_id from registered_rps where deleted is null and rp_domain=? ', [rpId]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1882,8 +1937,8 @@ async function putUserData(rpId, username, userid, displayname, registered){
       })
       if(0<ipid_result.length){
         const results = await new Promise((resolve, reject) => {
-          connection.query('INSERT into registered_users( rp_id, user_id, username, displayname, registered ) values(?,?,?,?,?) ', 
-              [ipid_result[0].rp_id, userid, username, displayname, registered],
+          connection.query(SqlString.format('INSERT into registered_users( rp_id, user_id, username, displayname, registered ) values(?,?,?,?,?) ', 
+              [ipid_result[0].rp_id, userid, username, displayname, registered]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1901,6 +1956,8 @@ async function putUserData(rpId, username, userid, displayname, registered){
 }
 
 async function generateUserSession(rpId, username){
+  if(typeof rpId != "string" || typeof username != "string") return;
+
   var session_id = uuidv4();
 
   if('mem'==process.env.STORAGE_TYPE){
@@ -1915,9 +1972,9 @@ async function generateUserSession(rpId, username){
 
     try {
       const result_userid = await new Promise((resolve, reject) => {
-        connection.query('SELECT user_id from registered_rps p, registered_users u ' +
+        connection.query(SqlString.format('SELECT user_id from registered_rps p, registered_users u ' +
             ' where p.deleted is null and u.deleted is null ' +
-            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1925,8 +1982,8 @@ async function generateUserSession(rpId, username){
       })
       if(0<result_userid.length){
         const results = await new Promise((resolve, reject) => {
-          connection.query('INSERT into user_sessions( session_id, user_id ) values(?,?) ', 
-              [session_id, result_userid[0].user_id],
+          connection.query(SqlString.format('INSERT into user_sessions( session_id, user_id ) values(?,?) ', 
+              [session_id, result_userid[0].user_id]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1946,6 +2003,9 @@ async function generateUserSession(rpId, username){
 }
 
 async function recordUserAction(rpId, username, action_type, action_session, error = ''){
+  if(typeof rpId != "string" || typeof username != "string" || typeof action_type != "number" 
+      || typeof action_session != "string" || typeof error != "string") return;
+
   var action_id = uuidv4();
 
   if('mysql'==process.env.STORAGE_TYPE){
@@ -1958,9 +2018,9 @@ async function recordUserAction(rpId, username, action_type, action_session, err
 
     try {
       const result_userid = await new Promise((resolve, reject) => {
-        connection.query('SELECT user_id from registered_rps p, registered_users u ' +
+        connection.query(SqlString.format('SELECT user_id from registered_rps p, registered_users u ' +
             ' where p.deleted is null and u.deleted is null ' +
-            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1968,8 +2028,8 @@ async function recordUserAction(rpId, username, action_type, action_session, err
       })
       if(0<result_userid.length){
         const results = await new Promise((resolve, reject) => {
-          connection.query('INSERT into user_actions( action_id, user_id, action_type, action_session, error ) values(?,?,?,?,?) ', 
-              [action_id, result_userid[0].user_id, action_type, action_session, error],
+          connection.query(SqlString.format('INSERT into user_actions( action_id, user_id, action_type, action_session, error ) values(?,?,?,?,?) ', 
+              [action_id, result_userid[0].user_id, action_type, action_session, error]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -1989,6 +2049,8 @@ async function recordUserAction(rpId, username, action_type, action_session, err
 }
 
 async function activeUserSession(rpId, session_id){
+  if(typeof rpId != "string" || typeof session_id != "string") return;
+
   var rtn = false;
   if('mem'==process.env.STORAGE_TYPE){
     logger.warn('mem storage does not support activeUserSession')
@@ -2002,8 +2064,8 @@ async function activeUserSession(rpId, session_id){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('update user_sessions set actived = now() where session_id = ? and TIMESTAMPDIFF(SECOND, created, NOW()) < ? and TIMESTAMPDIFF(SECOND, actived, NOW()) < ?', 
-        [session_id, userSessionHardTimeout.get(rpId), userSessionActiveTimeout.get(rpId)],
+        connection.query(SqlString.format('update user_sessions set actived = now() where session_id = ? and TIMESTAMPDIFF(SECOND, created, NOW()) < ? and TIMESTAMPDIFF(SECOND, actived, NOW()) < ?', 
+        [session_id, userSessionHardTimeout.get(rpId), userSessionActiveTimeout.get(rpId)]),
         (error, results) => {
           if (error) reject(error)
           resolve(results)
@@ -2020,6 +2082,10 @@ async function activeUserSession(rpId, session_id){
 }
 
 async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id, user_agent){
+  if(typeof rpId != "string" || typeof username != "string" || typeof publickey != "string" || typeof counter != "number"
+      || typeof fmt != "string" || typeof aaguid != "string" || (unique_device_id && typeof unique_device_id != "string")
+      || typeof user_agent != "string") return;
+
   if('mem'==process.env.STORAGE_TYPE){
     //console.log("try pushAttestation:" + username)
     database.get(rpId).get(username).attestation.push({
@@ -2043,9 +2109,9 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
 
     try {
       const result_userid = await new Promise((resolve, reject) => {
-        connection.query('SELECT user_id from registered_rps p, registered_users u ' +
+        connection.query(SqlString.format('SELECT user_id from registered_rps p, registered_users u ' +
             ' where p.deleted is null and u.deleted is null ' +
-            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username],
+            ' and p.rp_id=u.rp_id and p.rp_domain=? and u.username=?', [rpId, username]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -2054,8 +2120,8 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       if(0<result_userid.length){
         const results = await new Promise((resolve, reject) => {
           connection.query(
-            'INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid, unique_device_id, user_agent ) values(?,?,?,?,?,?,?,?) ', 
-              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid, unique_device_id?unique_device_id:'', user_agent],
+            SqlString.format('INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid, unique_device_id, user_agent ) values(?,?,?,?,?,?,?,?) ', 
+              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid, unique_device_id?unique_device_id:'', user_agent]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)
@@ -2073,6 +2139,8 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
 }
 
 async function setRegistered(rpId, username, registered){
+  if(typeof rpId != "string" || typeof username != "string" || typeof registered != "boolean") return;
+
   if('mem'==process.env.STORAGE_TYPE){
     database.get(rpId).get(username).registered = registered
   }else if('mysql'==process.env.STORAGE_TYPE){
@@ -2085,9 +2153,9 @@ async function setRegistered(rpId, username, registered){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query('update registered_users u set registered=? where u.deleted is null and '+
+        connection.query(SqlString.format('update registered_users u set registered=? where u.deleted is null and '+
             ' username=? and rp_id=(select rp_id from registered_rps where deleted is null and rp_domain=?) ', 
-            [registered, username, rpId],
+            [registered, username, rpId]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -2104,6 +2172,8 @@ async function setRegistered(rpId, username, registered){
 }
 
 async function bindedDeviceKey(rpId, username, publickey, unique_device_id){
+  if(typeof rpId != "string" || typeof username != "string" || typeof publickey != "string" || (unique_device_id && typeof unique_device_id != "string")) return;
+
   if('mem'==process.env.STORAGE_TYPE){
     let db_publickey = database.get(rpId).get(username).attestation.publickey
     let db_unique_device_id = database.get(rpId).get(username).unique_device_id
@@ -2119,10 +2189,10 @@ async function bindedDeviceKey(rpId, username, publickey, unique_device_id){
 
     try {
       const result_device = await new Promise((resolve, reject) => {
-        connection.query('SELECT attest_id from registered_rps p, registered_users u, attestations a ' +
+        connection.query(SqlString.format('SELECT attest_id from registered_rps p, registered_users u, attestations a ' +
             ' where p.deleted is null and u.deleted is null and a.deleted is null and registered = true ' +
             ' and p.rp_id=u.rp_id and a.user_id=u.user_id and p.rp_domain=? and u.username=? and a.public_key=? and a.unique_device_id=? ',
-            [rpId, username, publickey, unique_device_id],
+            [rpId, username, publickey, unique_device_id]),
             (error, results) => {
               if (error) reject(error)
               resolve(results)
