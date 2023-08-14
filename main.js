@@ -762,15 +762,15 @@ async function AppController(request, response) {
             var rtn = {status:'fail'}
             if(body.domains){
               rtn = await listUsers(body.domains, body.start?body.start:0, body.end?body.end:Number.MAX_SAFE_INTEGER, 
-                    body.search, body.last_created, body.limit?body.limit:20);
+                    body.search?decodeURIComponent(body.search):body.search, body.last_created, body.limit?body.limit:20);
               rtn.status='OK'
             }
             response.end(JSON.stringify(rtn));
           } else if( url.pathname == '/mng/data/actions' ){
             var rtn = {status:'fail'}
-            if(body.domains){
+            if(body.domains){              
               rtn = await listActions(body.domains, body.start?body.start:0, body.end?body.end:Number.MAX_SAFE_INTEGER, 
-                    body.search, body.last_created, body.fail_only, body.limit?body.limit:20);
+                body.search?decodeURIComponent(body.search):body.search, body.last_created, body.fail_only, body.limit?body.limit:20);
               rtn.status='OK'
             }
             response.end(JSON.stringify(rtn));
@@ -1111,7 +1111,7 @@ async function getDomainData(domains, start, end){
 
 async function listUsers(domains, start, end, search = null, last_created = null, limit = 20){
   if(typeof start != "number" || typeof end != "number" || (search && typeof search != "string") 
-      || typeof limit != "number" || (last_created && typeof last_created != "number") ) return;
+      || typeof limit != "number" || (last_created && typeof last_created != "string") ) return;
 
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
@@ -1281,7 +1281,7 @@ async function getActionData(domains, start, end){
 
 async function listActions(domains, start, end, search = null, last_created = null, fail_only = false, limit = 20){
   if(typeof start != "number" || typeof end != "number" || (search && typeof search != "string") 
-      || typeof limit != "number" || (last_created && typeof last_created != "number") || typeof fail_only != "boolean") return;
+      || typeof limit != "number" || (last_created && typeof last_created != "string") || typeof fail_only != "boolean") return;
 
   var rtn = {};
   if('mysql'==process.env.STORAGE_TYPE){
