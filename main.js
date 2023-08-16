@@ -22,6 +22,10 @@ const port = process.env.PORT || 443;
 
 const mysql = require('mysql2');
 const mysql_pool = mysql.createPool({
+  waitForConnections: true, // Wait for a connection to be available if the pool is full
+  queueLimit: 0, // Maximum number of queued connection requests (0 = unlimited)
+  connectTimeout: process.env.MYSQL_CONNECTION_TIMEOUT || 10000, // Connection timeout in milliseconds
+  //idleTimeoutMillis:  Idle connection timeout in milliseconds. Ignored in mysql2 version > 2.0.0.
   connectionLimit : process.env.MYSQL_POOL_LIMIT || 10,
   host: process.env.MYSQL_HOST || 'localhost',
   database: process.env.MYSQL_DATABASE || 'fido2_node_db',
@@ -165,18 +169,49 @@ async function AppController(request, response) {
   const url = new URL(request.url, `https://${request.headers.host}`)
 
   if(request.method === 'GET') {
-    let html=""
-    try{
-        /*let real_path;
-        if(url.pathname === '/')real_path='fido2.html'
-        else real_path = url.pathname
-        html = require('fs').readFileSync('views/'+real_path);*/
-        html = require('fs').readFileSync('views/'+url.pathname);
-    }catch(ex){
-        html=ex.message
+    // ====== heartbeat method ======
+    if( url.pathname.startsWith('/isworking') ){
+      var connection;
+      try {
+        connection = await new Promise((resolve, reject) => {
+          mysql_pool.getConnection((error, connection) => {
+            if (error) reject(error)
+            resolve(connection)
+          })
+        })
+        
+        const results = await new Promise((resolve, reject) => {
+          connection.query('SELECT rp_id from registered_rps limit 1',
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        })
+        response.end("fido2-node is Working.");        
+      }catch (err) {      
+        logger.error('DB err:'+err)
+        response.writeHead(404, {"Content-Type": "text/html"});
+        response.write("<html><body><h1>404 Not Found</h1></body></html>");
+        response.end();
+      } finally {
+        connection.release()
+      }
+      
+    }else{
+      let html=""
+      try{
+          /*let real_path;
+          if(url.pathname === '/')real_path='fido2.html'
+          else real_path = url.pathname
+          html = require('fs').readFileSync('views/'+real_path);*/
+          html = require('fs').readFileSync('views/'+url.pathname);
+      }catch(ex){
+          html=ex.message
+      }
+      response.writeHead(200, {'Content-Type': 'text/html'});
+      response.end(html);
     }
-    response.writeHead(200, {'Content-Type': 'text/html'});
-    response.end(html);
+    
   } else if(request.method === 'OPTIONS') {
     try{
       response.setHeader("Access-Control-Allow-Origin", "*");
@@ -820,7 +855,7 @@ async function AppController(request, response) {
               'status': 'failed'
             }));
           }
-      }
+      }      
     }
     }catch(ex){      
       //console.log("EX: " + ex.message)
