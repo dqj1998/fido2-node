@@ -61,6 +61,7 @@ var userSessionActiveTimeout
 var userSessionHardTimeout
 var processTimeout
 var regSessionTimeout
+var registerableDeviceLimit
 
 let database = new Map();//use json as DB, all data will lost after restart program.
 
@@ -98,6 +99,7 @@ function loadDomains(){
   regSessionTimeout = new Map(); //Seconds
   userVerificationReg = new Map();
   userVerificationAuth = new Map();
+  registerableDeviceLimit = new Map();
 
   domains_conf.domains.forEach(element => {
     registeredRps.push(element.domain)
@@ -125,6 +127,8 @@ function loadDomains(){
     else userVerificationReg.set(element.domain, "preferred")
     if(element.uv_auth)userVerificationAuth.set(element.domain, element.uv_auth)
     else userVerificationAuth.set(element.domain, "preferred")
+
+    if(element.device_limit && 0 < element.device_limit)registerableDeviceLimit.set(element.domain, element.device_limit)    
 
     if(element.user_session_active_timeout)userSessionActiveTimeout.set(element.domain, element.user_session_active_timeout)
     else userSessionActiveTimeout.set(element.domain, 15*60) //Seconds
@@ -496,6 +500,16 @@ async function AppController(request, response) {
         //Prevent register same authenticator
         if(user){
           user.attestation = await getAttestationData(rpId, username)
+
+          const dvclmt = registerableDeviceLimit.get(rpId)
+          if(dvclmt && dvclmt <= user.attestation.length){
+            response.end(JSON.stringify({
+              'status': 'failed',
+              'errorMessage': `SvrErr120:User has reached the device limit!`
+            }));
+            return
+          }
+
           let excludeCredentials = [];
           for(let authr of user.attestation) {
             excludeCredentials.push({
@@ -607,6 +621,8 @@ async function AppController(request, response) {
 
         const aaguidData = regResult.authnrData.get('aaguid')
         const aaguid = buf2hex(aaguidData)
+
+        logger.debug('aaguid:'+aaguid);
         //const aaguidtxt = buf2text(aaguidData) // Buffer.from(aaguid, 'hex').toString('utf-8'); //String.fromCharCode.apply("", new Uint8Array(aaguidData))
 
         if(cur_session.fido2lib.config.attestation == "enterprise"){
@@ -681,7 +697,8 @@ async function AppController(request, response) {
         if(!validsession){
           logger.warn('Somebody tried to access usr path:('+request.socket.remoteAddress+') without user session.');
           var rtn = {
-            errorMessage:"SvrErr119: No user session!"
+            'status': 'failed',
+            'errorMessage':'SvrErr119: No user session!'
           }
           response.end(JSON.stringify(rtn));
           return
