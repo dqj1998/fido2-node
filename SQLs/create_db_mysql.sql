@@ -78,7 +78,8 @@ alter table user_actions add index user_actions_IDX5(created);
 CREATE TABLE IF NOT EXISTS `registration_sessions` (
     `session_id` char(40) NOT NULL,
     `username` varchar(320) NOT NULL, -- can save email addresses
+    `displayname` varchar(320) NULL,
     `created` DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`session_id`)
-) ENGINE=MyISAM  DEFAULT CHARSET=ascii COMMENT='registration sessions';
+) ENGINE=MyISAM  DEFAULT CHARSET=utf8mb4 COMMENT='registration sessions';
 alter table registration_sessions add index registration_sessions_IDX1(created);

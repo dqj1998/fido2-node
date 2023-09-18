@@ -525,7 +525,7 @@ async function AppController(request, response) {
 
         registrationOptions.user.id = base64url.encode(userid);
         registrationOptions.user.name = username;
-        registrationOptions.user.displayName = body.displayName?body.displayName:username;
+        registrationOptions.user.displayName = body.displayName?decodeURIComponent(body.displayName):username;
 
         if(body.attestation)registrationOptions.attestation = body.attestation
         else if(fido2Lib.config.attestation){
@@ -703,8 +703,12 @@ async function AppController(request, response) {
           response.end(JSON.stringify(rtn));
           return
         }
-
-        if( url.pathname == '/usr/dvs/lst' ){//list user's devices
+        
+        if( url.pathname == '/usr/delsession' ){//delete user's session
+          delUserSession(body.session, body.username)
+          var rtn = { status:"ok" }
+          response.end(JSON.stringify(rtn));
+        }else if( url.pathname == '/usr/dvs/lst' ){//list user's devices
           const lst = await listUserDevices(rpId, body.session)
           var rtn = {
             session:body.session,
@@ -843,7 +847,7 @@ async function AppController(request, response) {
           } else if( url.pathname == '/mng/user/regsession' ){
             var rtn = {status:'fail'}
             if(body.username){
-              rtn.session_id = await generateRegSession(body.username);
+              rtn.session_id = await generateRegSession(body.username, body.displayname?decodeURIComponent(body.displayname):body.displayname);
               rtn.status='OK'
             }
             response.end(JSON.stringify(rtn));         
@@ -863,10 +867,8 @@ async function AppController(request, response) {
 
           let unm = await getRegSessionUsername(body.session_id)
           if(unm){
-            response.end(JSON.stringify({
-                'status': 'ok',
-                'username': unm
-              }));
+            unm.status = 'ok'
+            response.end(JSON.stringify(unm));
           }else{
             response.end(JSON.stringify({
               'status': 'failed'
@@ -1193,13 +1195,17 @@ async function listUsers(domains, start, end, search = null, last_created = null
         rp_domain_rp_id[row.rp_id] = row.rp_domain
       }
 
-      var rpids_where = ' rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
-      var search_where = search && search.length >0 ? ' username like "%'+search+'%" ':' 1=1 '
-      var last_created_where = last_created && last_created.length >0 ? ' created < "'+last_created+'" ':' 1=1 '
+      var rpids_where = ' u.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
+      var search_where
+      if(search && search.length >0){
+        search_where = ' ( u.username like "%'+search+'%" or u.displayname like "%'+search+'%" ) '
+      }else search_where = ' 1=1 '
+
+      var last_created_where = last_created && last_created.length >0 ? ' u.created < "'+last_created+'" ':' 1=1 '
       results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT user_id, rp_id, username, displayname, created from registered_users '+
+        connection.query(SqlString.format('SELECT u.user_id, u.rp_id, username, displayname, u.created, s.session_id from registered_users u left join user_sessions s on u.user_id=s.user_id '+
               'where '+ rpids_where + ' and ' + search_where + ' and ' + last_created_where + 
-              ' and registered=true and deleted is null and created between ? and ? order by created desc limit ' + limit, 
+              ' and registered=true and u.deleted is null and u.created between ? and ? order by u.created desc limit ' + limit, 
             [start, end]),
             (error, results) => {
               if (error) reject(error)
@@ -1228,7 +1234,8 @@ async function listUsers(domains, start, end, search = null, last_created = null
               userAgent: elm.user_agent?elm.user_agent:"",
               desc: meta_entry && meta_entry.metadataStatement && meta_entry.metadataStatement.description ? 
                   meta_entry.metadataStatement.description:"",
-              registered_time: elm.created
+              registered_time: elm.created,
+              session_id: row.session_id?row.session_id:""
             })
           }
           row.devices = devs
@@ -1530,7 +1537,7 @@ async function delDevice(domains, attest_id){
   return rtn;
 }
 
-async function generateRegSession(username){
+async function generateRegSession(username, displayname = null){
   if(typeof username != "string") return;
 
   var session_id = null;
@@ -1547,8 +1554,15 @@ async function generateRegSession(username){
       session_id = uuidv4()
 
       const results = await new Promise((resolve, reject) => {
-      connection.query(SqlString.format('INSERT into registration_sessions( session_id, username ) values(?,?) ', 
-          [session_id, username]),
+      var sql
+      if(displayname){
+        sql=SqlString.format('INSERT into registration_sessions( session_id, username, displayname ) values(?,?,?) ',
+          [session_id, username, displayname])
+      }else{
+        sql=SqlString.format('INSERT into registration_sessions( session_id, username ) values(?,?) ',
+          [session_id, username])
+      }
+      connection.query(sql,
           (error, results) => {
             if (error) reject(error)
             resolve(results)
@@ -1581,15 +1595,17 @@ async function getRegSessionUsername(session_id) {
 
     try { 
       var results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('select session_id, username from registration_sessions where session_id = ? ',
+        connection.query(SqlString.format('select session_id, username, displayname from registration_sessions where session_id = ? ',
           [session_id]),
           (error, results) => {
             if (error) reject(error)
             resolve(results)
           })
       })
+      rtn = {}
       if (0 < results.length) {
-        rtn = results[0].username
+        rtn.username = results[0].username
+        if(results[0].displayname && 0 < results[0].displayname.length) rtn.displayname = results[0].displayname
 
         // A session only can be used one time.
         results = await new Promise((resolve, reject) => {
@@ -1956,6 +1972,47 @@ async function delUserDevices(rpId, session_id, device_id){
   }
 
   return rtn
+}
+
+async function delUserSession(session_id, username){
+  if(typeof session_id != "string" || typeof username != "string") return;
+
+  if('mem'==process.env.STORAGE_TYPE){
+    if(username === user_sessions.get(session_id))user_sessions.delete(session_id)
+  }else if('mysql'==process.env.STORAGE_TYPE){
+    const connection = await new Promise((resolve, reject) => {
+      mysql_pool.getConnection((error, connection) => {
+        if (error) reject(error)
+        resolve(connection)
+      })
+    })
+
+    try {
+      const uid_result = await new Promise((resolve, reject) => {
+        connection.query(SqlString.format('SELECT user_id from registered_users where deleted is null and username=? ', [username]),
+            (error, results) => {
+              if (error) reject(error)
+              resolve(results)
+            })
+      })
+      if(0<uid_result.length){
+        const results = await new Promise((resolve, reject) => {
+          connection.query(SqlString.format('delete from user_sessions where session_id=? and user_id=?', 
+              [session_id, uid_result[0].user_id]),
+              (error, results) => {
+                if (error) reject(error)
+                resolve(results)
+              })
+        });
+      }
+    }catch (err) {      
+      logger.error('DB err:'+err)
+    } finally {
+      connection.release()
+    }
+  }else{
+    logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
+  }
 }
 
 async function putUserData(rpId, username, userid, displayname, registered){
