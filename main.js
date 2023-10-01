@@ -1228,7 +1228,7 @@ async function listUsers(domains, start, end, search = null, last_created = null
         if(0<devices.length){
           var devs = []
           for(let elm of devices) {  
-            const meta_entry = await mds3_client.findByAAGUID(elm.aaguid)            
+            const meta_entry = await findLocalAAGuide(elm.aaguid)
             devs.push({
               device_id: elm.attest_id,
               userAgent: elm.user_agent?elm.user_agent:"",
@@ -1246,7 +1246,7 @@ async function listUsers(domains, start, end, search = null, last_created = null
       rtn.users = results      
       rtn.last_created = last_created
     }catch (err) {      
-      logger.error('DB err:'+err)
+      logger.error('listUsers DB err:'+err)
     } finally {
       connection.release()
     }
@@ -1869,8 +1869,8 @@ async function listUserDevices(rpId, session_id){
     const atts = database.get(rpId).get(user_sessions.get(session_id)).attestation
     var index = 0;
     if(atts){
-      for(let att of atts) {
-        const meta_entry = await mds3_client.findByAAGUID(att.aaguid)      
+      for(let att of atts) {        
+        const meta_entry = await findLocalAAGuide(att.aaguid)
         rtn.push({
           device_id: index,
           userAgent: att.userAgent?att.userAgent:"",
@@ -1901,7 +1901,7 @@ async function listUserDevices(rpId, session_id){
       })
       if(0<results.length){
         for(let elm of results) {  
-          const meta_entry = await mds3_client.findByAAGUID(elm.aaguid)
+          const meta_entry = await findLocalAAGuide(elm.aaguid)
           rtn.push({
             device_id: elm.attest_id,
             userAgent: elm.user_agent?elm.user_agent:"",
@@ -1912,7 +1912,7 @@ async function listUserDevices(rpId, session_id){
         }
       }
     }catch (err) {      
-      logger.error('DB err:'+err)
+      logger.error('listUserDevices DB err:'+err)
     } finally {
       connection.release()
     }
@@ -2316,4 +2316,24 @@ async function bindedDeviceKey(rpId, username, publickey, unique_device_id){
   }else{
     logger.error('Unknown process.env.STORAGE_TYPE:' + process.env.STORAGE_TYPE);
   }  
+}
+
+var localAAGuidMetaMap = new Map()
+var localAAGuidMetaMapLastUpdate = 0
+async function findLocalAAGuide(aaguid){
+  //localAAGuidMetaMapLastUpdate is over 24 hours
+  if((Date.now() - localAAGuidMetaMapLastUpdate) > 86400000){
+    localAAGuidMetaMapLastUpdate = Date.now()
+    localAAGuidMetaMap.clear()
+    localAAGuidMetaMap.set('00000000000000000000000000000000', '0')
+  }
+  var meta_entry = localAAGuidMetaMap.get(aaguid)
+  if(!meta_entry){
+      meta_entry = await mds3_client.findByAAGUID(aaguid, false)
+      if(meta_entry)localAAGuidMetaMap.set(aaguid, meta_entry)
+      else localAAGuidMetaMap.set(aaguid, '0')
+  }else if('0' == meta_entry){
+    meta_entry = null
+  }
+  return meta_entry
 }
