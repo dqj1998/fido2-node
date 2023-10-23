@@ -1,5 +1,5 @@
 # fido2-node
-A node.js FIDO2/WebAuthn server passed FIDO Conformance Tool 1.7.11
+A node.js FIDO2/WebAuthn server passed FIDO Conformance Tool 1.7.15
 
 https://user-images.githubusercontent.com/4339123/230692122-d19b6154-d094-46d6-b6b7-31aabaeb9cce.mp4
 
@@ -165,4 +165,7 @@ We passed the latest version of FIDO Conformance Tools with MDS3
 
 # Troubleshoot
 ## AxiosError at booting when opened FIDO_CONFORMANCE_TEST=1
-This is caused by expired MDS3 BLOB download url in config-fido-conformance.json
+This is caused by expired MDS3 BLOB download url in config-fido-conformance.json. Create new URL by click 'MDS3 TEST SERVER' button on FIDO Conformance test tool FIDO2 screen.
+
+## Fetch failed when opened FIDO_CONFORMANCE_TEST=1
+Click 'allow connection to untrusted ssl servers' in MENU->Advanced config on FIDO Conformance test tool FIDO2 screen.

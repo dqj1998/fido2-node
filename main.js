@@ -273,7 +273,19 @@ async function AppController(request, response) {
           authnOptions["mediation"] = "conditional"
         }*/
 
-        authnOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationAuth);
+        //authnOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationAuth);       
+        if(process.env.FIDO_CONFORMANCE_TEST && body.userVerification){
+          authnOptions.userVerification=body.userVerification
+        }else{//Server can force userVerification in our system.
+          var uv = 'preferred'
+          if(userVerificationAuth.get(rpId)){
+            if(userVerificationAuth.get(rpId) != '_client'){
+              uv = userVerificationAuth.get(rpId)
+            }else if(body.userVerification)uv = body.userVerification
+          }
+
+          authnOptions.userVerification = uv;
+        }        
 
         let challengeTxt = uuidv4()
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
@@ -495,7 +507,7 @@ async function AppController(request, response) {
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
         registrationOptions.challenge = challengeBase64//Array.from(new TextEncoder().encode(challengeTxt)) //base64url.encode(uuidv4())//use challenge as session id
 
-        registrationOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationReg);
+        registrationOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationReg);        
 
         //Prevent register same authenticator
         if(user){
@@ -903,7 +915,7 @@ function equlsArrayBuffer(a, b){
 }
 
 function setUserVerification(domain, authenticatorSelection, userVerificationMap){
-  var rtn = authenticatorSelection;
+  var rtn = authenticatorSelection?authenticatorSelection:{};
   if(userVerificationMap.get(domain)){
     if(userVerificationMap.get(domain) != '_client'){
       rtn.userVerification = userVerificationMap.get(domain)
@@ -1021,6 +1033,13 @@ function checkRpId(reqBody, req_host, response){
   if(registeredRps.includes(real_rp_id)){
     return real_rp_id
   }else{
+    //real_rp_id is ends with one of registeredRps which starts With dot.
+    for(let rp of registeredRps){
+      if(rp.startsWith('.') && real_rp_id.endsWith(rp)){
+        return rp
+      }
+    }
+
     response.end(
       JSON.stringify({
         'status': 'failed',

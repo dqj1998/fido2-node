@@ -1,1 +1,157 @@
-{"domains":[{"domain":"portal.mac-air-m2.dqj-home.com","reg_page":"/dev.html","uv_auth":"preferred","uv_reg":"preferred"},{"domain":"sample.mac-air-m2.dqj-home.com","reg_page":"/devices.html","uv_auth":"preferred","uv_reg":"required","device_limit":"2","registration_session_timeout":"999"},{"domain":"rp01.abc.com","enterprise":true,"enterprise_aaguids":["aaaaaaaaaaa888888888999999999000","ee882879721c491397753dfcce97072a"],"device_bind_key":true,"user_session_active_timeout":600,"user_session_hard_timeout":43200},{"domain":"rp02.def.com","reg_page":"/devices.html","passkey_sync":"true","device_bind_key":"false","enterprise":"false","status":"OK"},{"domain":"rp03.abc.com","enterprise":false},{"domain":"www.test1.com"},{"domain":"www.test2.com","process_timeout":"666","user_session_active_timeout":"999","user_session_hard_timeout":"88888","device_bind_key":"true","enterprise":"true","enterprise_aaguids":["1aaaaaaaaaa888888888999999999000","2aaaaaaaaaa888888888999999999000"]},{"domain":"www.test3.com","process_timeout":"678"},{"domain":"www.hot01.com"},{"domain":"www.gmail.test1.com","enterprise":"true","enterprise_aaguids":["2aaaaaaaaaa888888888999999999001"]},{"domain":"sss.ggg.com","reg_page":"/kk/rrr199.html","process_timeout":"666","user_session_active_timeout":"999","registration_session_timeout":"988"},{"domain":"test1.abc.com","reg_page":"/dvc.jsp","device_bind_key":"true"},{"domain":"aaa.bb.com","reg_page":"/ddd.html","uv_auth":"preferred","uv_reg":"preferred"},{"domain":"999.ttt.com","reg_page":"/dd.html","uv_auth":"preferred","uv_reg":"preferred"},{"domain":"hotmail.abc.com","reg_page":"/dev.html","uv_auth":"preferred","uv_reg":"preferred","process_timeout":"660"},{"domain":"marketing.abc.com","reg_page":"/dev.jsp","uv_auth":"preferred","uv_reg":"preferred","process_timeout":"666","device_bind_key":"true"},{"domain":"sample.another.net","reg_page":"/devices.html","uv_auth":"preferred","uv_reg":"preferred"}],"backupfile":"domain.json1695888509902"}
+{
+    "domains": [
+        {
+            "domain": "localhost",
+            "reg_page": "/dev.html"
+        },
+        {
+            "domain": "mac-air-m2.dqj-home.com",
+            "reg_page": "/dev.html"
+        },
+        {
+            "domain": "portal.mac-air-m2.dqj-home.com",
+            "reg_page": "/dev.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred"
+        },
+        {
+            "domain": "sample.mac-air-m2.dqj-home.com",
+            "reg_page": "/devices.html",
+            "uv_auth": "preferred",
+            "uv_reg": "required",
+            "device_limit": "2",
+            "registration_session_timeout": "999"
+        },
+        {
+            "domain": "rp01.abc.com",
+            "enterprise": true,
+            "enterprise_aaguids": [
+                "aaaaaaaaaaa888888888999999999000",
+                "ee882879721c491397753dfcce97072a"
+            ],
+            "device_bind_key": true,
+            "user_session_active_timeout": 600,
+            "user_session_hard_timeout": 43200
+        },
+        {
+            "domain": "rp02.def.com",
+            "reg_page": "/devices.html",
+            "passkey_sync": "true",
+            "device_bind_key": "false",
+            "enterprise": "false",
+            "status": "OK"
+        },
+        {
+            "domain": "rp03.abc.com",
+            "enterprise": false
+        },
+        {
+            "domain": "www.test1.com"
+        },
+        {
+            "domain": "www.test2.com",
+            "process_timeout": "666",
+            "user_session_active_timeout": "999",
+            "user_session_hard_timeout": "88888",
+            "device_bind_key": "true",
+            "enterprise": "true",
+            "enterprise_aaguids": [
+                "1aaaaaaaaaa888888888999999999000",
+                "2aaaaaaaaaa888888888999999999000"
+            ]
+        },
+        {
+            "domain": "www.test3.com",
+            "process_timeout": "678"
+        },
+        {
+            "domain": "www.hot01.com"
+        },
+        {
+            "domain": "www.gmail.test1.com",
+            "enterprise": "true",
+            "enterprise_aaguids": [
+                "2aaaaaaaaaa888888888999999999001"
+            ]
+        },
+        {
+            "domain": "sss.ggg.com",
+            "reg_page": "/kk/rrr199.html",
+            "process_timeout": "666",
+            "user_session_active_timeout": "999",
+            "registration_session_timeout": "988"
+        },
+        {
+            "domain": "test1.abc.com",
+            "reg_page": "/dvc.jsp",
+            "device_bind_key": "true"
+        },
+        {
+            "domain": "aaa.bb.com",
+            "reg_page": "/ddd.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred"
+        },
+        {
+            "domain": "999.ttt.com",
+            "reg_page": "/dd.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred"
+        },
+        {
+            "domain": "hotmail.abc.com",
+            "reg_page": "/dev.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred",
+            "process_timeout": "660"
+        },
+        {
+            "domain": "marketing.abc.com",
+            "reg_page": "/dev.jsp",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred",
+            "process_timeout": "666",
+            "device_bind_key": "true"
+        },
+        {
+            "domain": "sample.another.net",
+            "reg_page": "/devices.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred"
+        },
+        {
+            "domain": ".ec-cube.service",
+            "reg_page": "/dev.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred",
+            "status": "OK"
+        },
+        {
+            "domain": ".abc.com",
+            "reg_page": "/dev6.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred",
+            "status": "OK"
+        },
+        {
+            "domain": "a1.t.com",
+            "reg_page": "/dev.jsp",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred"
+        },
+        {
+            "domain": "a2.tt.net",
+            "reg_page": "/dd",
+            "uv_auth": "preferred",
+            "uv_reg": "required",
+            "process_timeout": "666"
+        },
+        {
+            "domain": "tt.2mm.ne",
+            "reg_page": "/ddh",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred"
+        }
+    ],
+    "backupfile": "domain.json1697597813780"
+}

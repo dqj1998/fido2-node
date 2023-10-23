@@ -8,7 +8,7 @@
  */
 {
   "mds": {
-    "url": "https://mds3.fido.tools/execute/f2440b134caf94bfbe6c52484dc7a96acc408ca15701a9a76d928d52fcac9b91",  /* MDS3 BLOB download url is one of endpoints from 'MDS3 TEST SERVER' button of conformance tool . */
+    "url": "https://mds3.fido.tools/execute/bc2bfadfc73d1101e368831c7a164e0243ba6f092d63dfe2411e79f98840a5e8",  /* MDS3 BLOB download url is one of endpoints from 'MDS3 TEST SERVER' button of conformance tool . */
     "file": "../data/blob-fido-conformance.jwt",              /* MDS3 BLOB file path. */
     "access": "url"                          /* How to access MDS3. */
   },
