@@ -572,6 +572,9 @@ async function AppController(request, response) {
         registrationOptions.status = 'ok';
         registrationOptions.errorMessage = '';
 
+        if(registrationOptions.rp.id &&  registrationOptions.rp.id.startsWith('.')){
+          registrationOptions.rp.id = req_host;
+        }
         response.end(JSON.stringify(registrationOptions));
 
       }else if( url.pathname == '/attestation/result'){

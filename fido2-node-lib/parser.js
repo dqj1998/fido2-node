@@ -36,7 +36,13 @@ function parseExpectations(exp) {
 			);
 		}
 
-		const rpId = tools.checkRpId(exp.rpId);
+		var rpId = null;
+
+		if(exp.rpId.startsWith('.')){
+			// For subdomains
+			rpId = (new URL(exp.origin)).hostname;
+		}else rpId = tools.checkRpId(exp.rpId);
+
 		ret.set("rpId", rpId);
 	}
 
