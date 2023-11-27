@@ -119,7 +119,7 @@ function checkUrl(value, name, rules = {}) {
 	try {
 		urlValue = new URL(value);
 	} catch (_err) {
-		throw new Error(`${name} is not a valid eTLD+1/url`);
+		throw new Error(`${name} is not a valid eTLD+1/url:`+value);
 	}
 
 	if (!value.startsWith("http")) {

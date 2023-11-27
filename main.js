@@ -323,6 +323,11 @@ async function AppController(request, response) {
         authnOptions.status = 'ok';
         authnOptions.errorMessage = '';
     
+        if(authnOptions.rpId &&  authnOptions.rpId.startsWith('.')){
+          logger.debug('Changed authnOptions.rpId from:'+authnOptions.rpId+' to:'+req_host);
+          authnOptions.rpId = req_host;          
+        }
+
         response.end(JSON.stringify(authnOptions));
       }else if(url.pathname == '/assertion/result'){
         const body = await loadJsonBody(request)
@@ -434,6 +439,11 @@ async function AppController(request, response) {
           prevCounter: attestation.counter,
           userHandle: user.id          
         };
+
+        if(assertionExpectations.rpId && assertionExpectations.rpId.startsWith('.')){
+          logger.debug('Changed assertionExpectations.rpId from:'+assertionExpectations.rpId+' to:'+req_host);
+          assertionExpectations.rpId = req_host;
+        }
 
         body.userVerification = cur_session.fido2lib.config.authenticatorUserVerification
         
@@ -573,6 +583,7 @@ async function AppController(request, response) {
         registrationOptions.errorMessage = '';
 
         if(registrationOptions.rp.id &&  registrationOptions.rp.id.startsWith('.')){
+          logger.debug('Changed registrationOptions.rp.id from:'+registrationOptions.rp.id+' to:'+req_host);
           registrationOptions.rp.id = req_host;
         }
         response.end(JSON.stringify(registrationOptions));
@@ -621,6 +632,11 @@ async function AppController(request, response) {
             rpId: cur_session.fido2lib.config.rpId,
             factor: "either"
         };
+
+        if(attestationExpectations.rpId && attestationExpectations.rpId.startsWith('.')){
+          logger.debug('Changed attestationExpectations.rpId from:'+attestationExpectations.rpId+' to:'+req_host);
+          attestationExpectations.rpId = req_host;
+        }
 
         var regResult
         try{
