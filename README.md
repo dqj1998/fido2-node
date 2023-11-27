@@ -31,7 +31,10 @@ Open/close this feature by the boolean config of device_bind_key in domain.json.
 Usually, this feature is to force disable key synchronization among devices to gain a more robust security level.
 dFido2Lib-ios and dFido2Lib-android SDKs support this feature.
 
-# User device APIs
+## Wildcard domain
+A domain starting with a dot is a wildcard domain that can match all subdomains. This feature simplifies the configuration for a large set of domains.
+
+# User device APIs(Extension)
 
 ## List user's devices
 /usr/dvc/lst
@@ -79,7 +82,7 @@ status:  ok or fail
 
 remain_count: How may devices remain in this user's list after removing
 
-# User session API
+# User session API(Extension)
 /usr/validsession
 
 Validating if a session ID is alive. Client web site can use this to manage user session.
@@ -90,7 +93,7 @@ session: Session ID created by FIDO2 registration or authentication API. Finding
 
 rpID: (optional)Client domain will be used if not set
 
-# User recovery session APIs
+# User recovery session APIs(Extension)
 
 These APIs help clients generate and validate device registration sessions through which users register their devices without authentication. 
 
