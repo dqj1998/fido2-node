@@ -132,6 +132,32 @@ session_id: The registration session Id retuned by '/mng/user/regsession'
 
 Return the username binding to this session.
 
+# Enabling Extension Features via fido2-node-ex
+
+The Extension Features APIs (User device APIs, User session API, User recovery session APIs) are now provided by an external library fido2-node-ex and can be conditionally enabled.
+
+How to enable:
+1) Make the library available to fido2-node:
+   - Local development: place fido2-node-ex alongside fido2-node so it can be required via ../fido2-node-ex
+   - Or install as a module (if published): npm install fido2-node-ex
+
+2) In fido2-node/.env, set:
+   EXT_FEATURES=1
+   or
+   EXT_FEATURES=true
+
+3) Restart the server. When EXT_FEATURES is enabled and the library is present, the server will mount these endpoints:
+   - /usr/validsession
+   - /usr/delsession
+   - /usr/dvs/lst and /usr/dvc/lst
+   - /usr/dvs/rm and /usr/dvc/rm
+   - /mng/user/regsession (requires MNG_TOKEN)
+   - /reg/username
+
+If EXT_FEATURES is disabled or the library is not present, these endpoints will be unavailable.
+
+Refer to fido2-node-ex/README.md for details.
+
 # Storage
 Stoarge type is set by STORAGE_TYPE in .env
 

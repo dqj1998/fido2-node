@@ -74,6 +74,35 @@ let sessions = {};
 
 const {mds3_client} = require("./mds3.js")
 
+// Extension features toggle and handler bootstrap
+const EXT_FEATURES_ENABLED = (process.env.EXT_FEATURES === '1' || (process.env.EXT_FEATURES && process.env.EXT_FEATURES.toLowerCase && process.env.EXT_FEATURES.toLowerCase() === 'true'));
+
+let extensionHandler = null;
+if (EXT_FEATURES_ENABLED) {
+  try {
+    let ex;
+    try { 
+      ex = require('../fido2-node-ex');
+    } catch (e1) { 
+      ex = require('fido2-node-ex'); 
+    }
+    extensionHandler = ex.createHandler({
+      loadJsonBody,
+      checkRpId,
+      checkUserSession,
+      delUserSession,
+      listUserDevices,
+      delUserDevices,
+      generateRegSession,
+      getRegSessionUsername,
+      logger
+    });
+    logger.info('Extension features enabled.');
+  } catch (e) {
+    logger.warn('Failed to load extension features lib: ' + e.message);
+  }
+}
+
 server.on('request', AppController);
 
 server.listen(port);
@@ -247,6 +276,16 @@ async function AppController(request, response) {
       response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, access_token");
       response.setHeader("Access-Control-Allow-Credentials", "true");
       
+      // Extension Features APIs gate and delegation
+      if (url.pathname.startsWith('/usr/') || url.pathname === '/mng/user/regsession' || url.pathname.startsWith('/reg/username')) {
+        if (!(EXT_FEATURES_ENABLED && extensionHandler)) {
+          response.end(JSON.stringify({ status: 'failed', errorMessage: 'SvrErr200: Extension features disabled' }));
+          return;
+        }
+        const handled = await extensionHandler(url, request, response, { req_host });
+        if (handled) return;
+      }
+
       if(url.pathname == '/assertion/options'){
         const body = await loadJsonBody(request)
     
@@ -708,55 +747,8 @@ async function AppController(request, response) {
         await recordUserAction(cur_session.fido2lib.config.rpId, cur_session.username, 0, challenge)
         response.end(JSON.stringify(rtn));
       }
-      // ====== User Management methods ======
-      else if( url.pathname.startsWith('/usr/') ){
-        const body = await loadJsonBody(request)
-
-        let rpId=checkRpId(body, req_host, response)
-        if(null==rpId)return
-
-        const validsession = body.session && await checkUserSession(rpId, body.session)
-
-        if( url.pathname == '/usr/validsession' ){//valid user's session
-          var rtn = {
-            status:validsession?"ok":"fail"
-          }
-          response.end(JSON.stringify(rtn));
-          return
-        }
-
-        if(!validsession){
-          logger.warn('Somebody tried to access usr path:('+request.socket.remoteAddress+') without user session.');
-          var rtn = {
-            'status': 'failed',
-            'errorMessage':'SvrErr119: No user session!'
-          }
-          response.end(JSON.stringify(rtn));
-          return
-        }
-        
-        if( url.pathname == '/usr/delsession' ){//delete user's session
-          delUserSession(body.session, body.username)
-          var rtn = { status:"ok" }
-          response.end(JSON.stringify(rtn));
-        }else if( url.pathname == '/usr/dvs/lst' ){//list user's devices
-          const lst = await listUserDevices(rpId, body.session)
-          var rtn = {
-            session:body.session,
-            devices:lst,
-            status:"ok"
-          }
-          response.end(JSON.stringify(rtn));
-        }else if( url.pathname == '/usr/dvs/rm' ){//remove user's devices
-          const del = await delUserDevices(rpId, body.session, body.device_id)
-          var rtn = {
-            session:body.session,
-            status:del>=0?"ok":"fail",
-            remain_count:del
-          }
-          response.end(JSON.stringify(rtn));
-        }
-      }
+      // ====== User Management methods (moved to fido2-node-ex) ======
+      
       // ====== System Management methods ======
       // There are json examples in examples folder
       else if( url.pathname.startsWith('/mng/') ){
@@ -875,13 +867,6 @@ async function AppController(request, response) {
             }
             rtn.status='OK'
             response.end(JSON.stringify(rtn));          
-          } else if( url.pathname == '/mng/user/regsession' ){
-            var rtn = {status:'fail'}
-            if(body.username){
-              rtn.session_id = await generateRegSession(body.username, body.displayname?decodeURIComponent(body.displayname):body.displayname);
-              rtn.status='OK'
-            }
-            response.end(JSON.stringify(rtn));         
           }
         } else{
           logger.warn('Somebody tried to access mng path:('+request.socket.remoteAddress+') with token='+
@@ -889,24 +874,7 @@ async function AppController(request, response) {
           response.end("");
         }        
       }
-      // ====== Registration method ======
-      else if( url.pathname.startsWith('/reg/username') ){
-        const body = await loadJsonBody(request)
-        if(body.session_id ){
-          let rpId=checkRpId(body, req_host, response)
-          if(null==rpId)return
-
-          let unm = await getRegSessionUsername(body.session_id)
-          if(unm){
-            unm.status = 'ok'
-            response.end(JSON.stringify(unm));
-          }else{
-            response.end(JSON.stringify({
-              'status': 'failed'
-            }));
-          }
-      }      
-    }
+      // ====== Registration method (moved to fido2-node-ex)======
     }catch(ex){      
       //console.log("EX: " + ex.message)
       logger.error("EX: " + ex.message  + ";" + ex.stack)
