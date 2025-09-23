@@ -1,5 +1,5 @@
 # fido2-node
-A node.js FIDO2/WebAuthn server passed FIDO Conformance Tool 1.7.15
+A node.js FIDO2/WebAuthn server passed FIDO Conformance Tool v1.7.27.1
 
 https://github.com/dqj1998/fido2-node/assets/4339123/04d309c5-7f40-4075-bc6d-8ebe3616e84a
 
@@ -133,6 +133,8 @@ session_id: The registration session Id retuned by '/mng/user/regsession'
 Return the username binding to this session.
 
 # Enabling Extension Features via fido2-node-ex
+
+[Contact us at support@amipro.me for fido2-node-ex]
 
 The Extension Features APIs (User device APIs, User session API, User recovery session APIs) are now provided by an external library fido2-node-ex and can be conditionally enabled.
 
