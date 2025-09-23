@@ -288,6 +288,8 @@ async function AppController(request, response) {
 
       if(url.pathname == '/assertion/options'){
         const body = await loadJsonBody(request)
+
+        logger.debug(body);
     
         let username = body.username;
     
@@ -312,20 +314,33 @@ async function AppController(request, response) {
           authnOptions["mediation"] = "conditional"
         }*/
 
-        //authnOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationAuth);       
-        if(process.env.FIDO_CONFORMANCE_TEST && body.userVerification){
-          authnOptions.userVerification=body.userVerification
-        }else{//Server can force userVerification in our system.
-          var uv = 'preferred'
-          if(userVerificationAuth.get(rpId)){
-            if(userVerificationAuth.get(rpId) != '_client'){
+        var userVerification = body.userVerification;
+        if(!userVerification && body.authenticatorSelection){
+          userVerification = body.authenticatorSelection.userVerification
+        }
+
+        const authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, 
+          userVerificationAuth, userVerification);
+        authnOptions.userVerification = authenticatorSelection.userVerification;//assertion need set userVerification in root of authnOptions
+
+        /*var uv = 'preferred'
+        if (process.env.FIDO_CONFORMANCE_TEST && body.userVerification) {
+          uv = body.userVerification
+        } else {//Server can force userVerification in our system.
+          if (userVerificationAuth.get(rpId)) {
+            if (userVerificationAuth.get(rpId) != '_client') {
               uv = userVerificationAuth.get(rpId)
-            }else if(body.userVerification)uv = body.userVerification
+            } else if (body.userVerification) uv = body.userVerification
           }
-
-          authnOptions.userVerification = uv;
-        }        
-
+        }
+        authnOptions.userVerification = uv;
+        */
+        // Ensure UV flag is set when userVerification is required
+        /*if (authnOptions.authenticatorSelection.userVerification === "required") {
+          authnOptions.flags = authnOptions.flags || new Set();
+          authnOptions.flags.add("UV");
+        }*/
+   
         let challengeTxt = uuidv4()
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
         authnOptions.challenge = challengeBase64 //Array.from(new TextEncoder().encode(challengeTxt))
@@ -473,6 +488,7 @@ async function AppController(request, response) {
           challenge: cur_session.challenge,
           origin: req_origin, //FIDO_ORIGIN,
           rpId: cur_session.fido2lib.config.rpId,
+          config: cur_session.fido2lib.config,
           factor: "either",
           publicKey: attestation.publickey,
           prevCounter: attestation.counter,
@@ -537,6 +553,8 @@ async function AppController(request, response) {
       }else if(url.pathname === '/attestation/options'){
         const body = await loadJsonBody(request)
 
+        logger.debug("/attestation/options body:" + body)
+
         let rpId=checkRpId(body, req_host, response)
         if(null==rpId)return
 
@@ -556,7 +574,13 @@ async function AppController(request, response) {
         let challengeBase64 = base64url.encode(challengeTxt) //To fit to the challenge of CollectedClientData
         registrationOptions.challenge = challengeBase64//Array.from(new TextEncoder().encode(challengeTxt)) //base64url.encode(uuidv4())//use challenge as session id
 
-        registrationOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, userVerificationReg);        
+        var userVerification = body.userVerification;
+        if(!userVerification && body.authenticatorSelection){
+          userVerification = body.authenticatorSelection.userVerification
+        }
+
+        registrationOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, 
+          userVerificationReg, userVerification);        
 
         //Prevent register same authenticator
         if(user){
@@ -630,6 +654,8 @@ async function AppController(request, response) {
       }else if( url.pathname == '/attestation/result'){
         const body = await loadJsonBody(request)
 
+        logger.debug("/attestation/result body:" + body)
+
         let rtn={};
 
         let chkReq = checkResultRequest(body)
@@ -669,6 +695,7 @@ async function AppController(request, response) {
             challenge: cur_session.challenge,
             origin: req_origin, //FIDO_ORIGIN,
             rpId: cur_session.fido2lib.config.rpId,
+            config: cur_session.fido2lib.config,
             factor: "either"
         };
 
@@ -901,16 +928,24 @@ function equlsArrayBuffer(a, b){
   return true 
 }
 
-function setUserVerification(domain, authenticatorSelection, userVerificationMap){
+function setUserVerification(domain, authenticatorSelection, userVerificationMap, userVerification){
+  logger.debug("userVerification="+userVerification);
+
   var rtn = authenticatorSelection?authenticatorSelection:{};
-  if(userVerificationMap.get(domain)){
-    if(userVerificationMap.get(domain) != '_client'){
-      rtn.userVerification = userVerificationMap.get(domain)
+
+  rtn.userVerification = 'preferred'
+
+  if (process.env.FIDO_CONFORMANCE_TEST && userVerification) {
+    rtn.userVerification = userVerification
+  } else {//Server can force userVerification in our system.
+    if(userVerificationMap.get(domain)){
+      if(userVerificationMap.get(domain) != '_client'){
+        rtn.userVerification = userVerificationMap.get(domain)
+      } else if (userVerification) rtn.userVerification = userVerification 
     }
-  }else{
-    rtn.userVerification = 'preferred'
   }
 
+  logger.debug("rtn authenticatorSelection="+rtn);
   return rtn;
 }
 
@@ -997,8 +1032,9 @@ function getFido2Lib(rpId, reqBody){
   }
 
   if(null!=reqBody){
-    if(reqBody.userVerification){//}.authenticatorSelection){
-      opts.authenticatorUserVerification=reqBody.userVerification
+    opts.authenticatorUserVerification = reqBody.userVerification
+    if(!opts.authenticatorUserVerification && reqBody.authenticatorSelection && reqBody.authenticatorSelection.userVerification){//}.authenticatorSelection){
+      opts.authenticatorUserVerification=reqBody.authenticatorSelection.userVerification
     }
   }
 
@@ -2158,7 +2194,7 @@ async function recordUserAction(rpId, username, action_type, action_session, err
       connection.release()
     }
   }else{
-    logger.error('Unsupport process.env.STORAGE_TYPE for recordUserAction:' + process.env.STORAGE_TYPE);
+    logger.warn('Unsupport process.env.STORAGE_TYPE for recordUserAction:' + process.env.STORAGE_TYPE);
   }
   return action_id
 }

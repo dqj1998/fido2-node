@@ -92,6 +92,7 @@ class Fido2AttestationResult extends Fido2Result {
 		]);
 		this.optionalExpectations = new Set([
 			"rpId",
+			"config",
 		]);
 	}
 
@@ -137,6 +138,7 @@ class Fido2AssertionResult extends Fido2Result {
 		this.optionalExpectations = new Set([
 			"rpId",
 			"allowCredentials",
+			"config",
 		]);
 	}
 

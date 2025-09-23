@@ -484,17 +484,20 @@ async function validateFlags() {
 		if (expFlag === "UP-or-UV") {
 			if (flags.has("UV")) {
 				if (flags.has("UP") || 
-						(this.request.userVerification && this.request.userVerification === "discouraged")) {
+						(this.expectations.get("config") && this.expectations.get("config").authenticatorUserVerification 
+							&& this.expectations.get("config").authenticatorUserVerification === "discouraged")) {
 					continue;
 				} else throw new Error("expected User Presence (UP) flag to be set if User Verification (UV) is set");
 			} else if (flags.has("UP")) {
-				if ( this.request.userVerification && this.request.userVerification === "required") {
-					throw new Error("Only authenticatorData.flags.UP is set for userVerification required");
+				if ( this.expectations.get("config") && this.expectations.get("config").authenticatorUserVerification 
+							&& this.expectations.get("config").authenticatorUserVerification === "required") {
+					throw new Error("Only authenticatorData.flags.UP is set for authenticatorUserVerification required");
 				} else continue;
-			} else if ( this.request.userVerification && 
-					(this.request.userVerification === "preferred" || this.request.userVerification === "discouraged") ){
+			} else if ( this.expectations.get("config") && this.expectations.get("config").authenticatorUserVerification && 
+					(this.expectations.get("config").authenticatorUserVerification === "preferred" || this.expectations.get("config").authenticatorUserVerification === "discouraged") ){
 				continue;
 			} else {
+				logger.debug("validateFlags throws: expected User Presence (UP) or User Verification (UV) flag to be set and neither was");
 				throw new Error("expected User Presence (UP) or User Verification (UV) flag to be set and neither was");
 			}
 		}
@@ -502,10 +505,12 @@ async function validateFlags() {
 		if (expFlag === "UV") {
 			if (flags.has("UV")) {
 				if (flags.has("UP") || 
-						(this.request.userVerification && this.request.userVerification === "discouraged")) {
+						(this.expectations.get("config") && this.expectations.get("config").authenticatorUserVerification 
+							&& this.expectations.get("config").authenticatorUserVerification === "discouraged")) {
 					continue;
 				} else throw new Error("expected User Presence (UP) flag to be set if User Verification (UV) is set");
-			} else if (this.request.userVerification && this.request.userVerification === "discouraged") {
+			} else if (his.expectations["config"] && this.expectations.get("config").authenticatorUserVerification 
+							&& this.expectations.get("config").authenticatorUserVerification === "discouraged") {
 				continue;
 			} else {
 				throw new Error(`expected flag was not set: ${expFlag}`);

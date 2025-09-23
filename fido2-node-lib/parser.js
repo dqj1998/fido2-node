@@ -125,6 +125,10 @@ function parseExpectations(exp) {
 		ret.set("allowCredentials", allowCredentials);
 	}
 
+	if(exp.config){
+		ret.set("config", exp.config);
+	}
+
 	return ret;
 }
 

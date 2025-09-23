@@ -6,3 +6,7 @@ ssl/dqj_selfsigned_mac.crt
 ssl/dqj_selfsigned_mac.key
 ssl/dqj-macpro.crt
 logs/fido2_node.log
+fido-conformance-metadata-statements/.DS_Store
+.gitignore
+logs/
+.DS_Store

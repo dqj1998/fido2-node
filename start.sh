@@ -1,3 +1,3 @@
 #bin
 
-node main.js >> output.log 2>&1
+node main.js >> logs/start.log 2>&1
