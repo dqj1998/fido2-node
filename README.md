@@ -149,8 +149,8 @@ How to enable:
 3) Restart the server. When EXT_FEATURES is enabled and the library is present, the server will mount these endpoints:
    - /usr/validsession
    - /usr/delsession
-   - /usr/dvs/lst and /usr/dvc/lst
-   - /usr/dvs/rm and /usr/dvc/rm
+   - /usr/dvc/lst
+   - /usr/dvc/rm
    - /mng/user/regsession (requires MNG_TOKEN)
    - /reg/username
 
