@@ -27,6 +27,10 @@ Support aaguid checking for enterprise attestation.
 
 * The enterprise_aaguids of domain.json is Array so that we can support the seamless upgrade of aaguids.
 
+## Native SDKs for iOS and Android 
+- [dFido2Lib-ios](https://github.com/dqj1998/dFido2Lib-ios)
+- [dFido2Lib-android](https://github.com/dqj1998/dFido2Lib-android)
+
 # Extension Features
 
 ## Multiple rp ids
@@ -38,7 +42,7 @@ dFido2Lib-android and dFido2Lib-ios SDKs are not this limilation.
 Cannot auth with a unique device binded key from a different device(another installation of SDK).
 Open/close this feature by the boolean config of device_bind_key in domain.json. The default is false.
 Usually, this feature is to force disable key synchronization among devices to gain a more robust security level.
-dFido2Lib-ios and dFido2Lib-android SDKs support this feature.
+[dFido2Lib-ios](https://github.com/dqj1998/dFido2Lib-ios) and [dFido2Lib-android](https://github.com/dqj1998/dFido2Lib-android) SDKs support this feature.
 
 ## Wildcard domain
 A domain starting with a dot is a wildcard domain that can match all subdomains. This feature simplifies the configuration for a large set of domains.
