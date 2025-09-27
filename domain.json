@@ -19,6 +19,12 @@
             "uv_reg": "preferred"
         },
         {
+            "domain": "sample.mac-air-m2.dqj-macpro.com",
+            "reg_page": "/devices.html",
+            "uv_auth": "preferred",
+            "uv_reg": "required"
+        },
+        {
             "domain": "sample.mac-air-m2.dqj-home.com",
             "reg_page": "/devices.html",
             "uv_auth": "preferred",
