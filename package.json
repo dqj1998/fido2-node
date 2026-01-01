@@ -1,4 +1,13 @@
 {
+  "scripts": {
+    "test": "jest",
+    "test:performance": "jest UT/*.performance.test.js",
+    "test:performance:watch": "jest UT/*.performance.test.js --watch",
+    "test:register": "jest UT/register.performance.test.js",
+    "test:authenticate": "jest UT/authenticate.performance.test.js",
+    "test:concurrency": "jest UT/concurrency.performance.test.js",
+    "test:report": "node UT/performance-report.js"
+  },
   "dependencies": {
     "@hexagon/base64": "^1.1.25",
     "@peculiar/webcrypto": "^1.4.1",
@@ -16,5 +25,10 @@
     "str2ab": "^1.2.1",
     "tldts": "^5.7.104",
     "uuid": "^8.3.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "sinon": "^17.0.1"
   }
 }
