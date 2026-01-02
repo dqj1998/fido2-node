@@ -129,6 +129,7 @@ function loadDomains(){
   userVerificationReg = new Map();
   userVerificationAuth = new Map();
   registerableDeviceLimit = new Map();
+  authenticatorAttachment = new Map(); // platform, cross-platform, or undefined
 
   domains_conf.domains.forEach(element => {
     registeredRps.push(element.domain)
@@ -156,6 +157,13 @@ function loadDomains(){
     else userVerificationReg.set(element.domain, "preferred")
     if(element.uv_auth)userVerificationAuth.set(element.domain, element.uv_auth)
     else userVerificationAuth.set(element.domain, "preferred")
+
+    // Load authenticatorAttachment setting (platform/cross-platform/both)
+    if(element.authenticator_attachment){
+      authenticatorAttachment.set(element.domain, element.authenticator_attachment);
+    } else {
+      authenticatorAttachment.set(element.domain, undefined); // undefined = both allowed
+    }
 
     if(element.device_limit && 0 < element.device_limit)registerableDeviceLimit.set(element.domain, element.device_limit)    
 
@@ -204,6 +212,11 @@ async function AppController(request, response) {
   if(request.method === 'GET') {
     // ====== heartbeat method ======
     if( url.pathname.startsWith('/isworking') ){
+      if(process.env.STORAGE_TYPE !== 'mysql'){
+        response.end("fido2-node is Working.");
+        return
+      }
+
       var connection;
       try {
         connection = await new Promise((resolve, reject) => {
@@ -227,7 +240,7 @@ async function AppController(request, response) {
         response.write("<html><body><h1>404 Not Found</h1></body></html>");
         response.end();
       } finally {
-        connection.release()
+        if (connection) connection.release()
       }
       
     }else{
@@ -349,11 +362,18 @@ async function AppController(request, response) {
         if( username && username.length > 0 ){
           let attestations = await getAttestationData(rpId, username)
           for(let authr of attestations) {
-            allowCredentials.push({
+            let credential = {
               type: 'public-key',
-              id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
-              transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']// can be overrided by client
-            })
+              id: base64url.encode(authr.credId) //Array.from(new Uint8Array(authr.credId))
+            };
+            // Use saved transports if available, otherwise provide all options
+            if(authr.transports && authr.transports.length > 0) {
+              credential.transports = authr.transports;
+            } else {
+              credential.transports = ['internal', 'hybrid', 'usb', 'nfc', 'ble'];
+            }
+            logger.debug('Allow credential added: ' + JSON.stringify(credential));
+            allowCredentials.push(credential);
           }
           authnOptions.allowCredentials = allowCredentials;
 
@@ -580,7 +600,13 @@ async function AppController(request, response) {
         }
 
         registrationOptions.authenticatorSelection = setUserVerification(rpId, body.authenticatorSelection, 
-          userVerificationReg, userVerification);        
+          userVerificationReg, userVerification);
+        
+        // Apply authenticatorAttachment setting if configured
+        const authAttachment = authenticatorAttachment.get(rpId);
+        if(authAttachment && authAttachment !== 'both') {
+          registrationOptions.authenticatorSelection.authenticatorAttachment = authAttachment;
+        }        
 
         //Prevent register same authenticator
         if(user){
@@ -597,11 +623,17 @@ async function AppController(request, response) {
 
           let excludeCredentials = [];
           for(let authr of user.attestation) {
-            excludeCredentials.push({
-                type: 'public-key',
-                id: base64url.encode(authr.credId), //Array.from(new Uint8Array(authr.credId)),
-                transports: ['internal', 'hybrid', 'usb', 'nfc', 'ble']
-              })
+            let credential = {
+              type: 'public-key',
+              id: base64url.encode(authr.credId) //Array.from(new Uint8Array(authr.credId))
+            };
+            // Use saved transports if available, otherwise provide all options
+            if(authr.transports && authr.transports.length > 0) {
+              credential.transports = authr.transports;
+            } else {
+              credential.transports = ['internal', 'hybrid', 'usb', 'nfc', 'ble'];
+            }
+            excludeCredentials.push(credential);
           }
           if(excludeCredentials.length > 0)registrationOptions.excludeCredentials = excludeCredentials
 
@@ -745,9 +777,11 @@ async function AppController(request, response) {
           if(0 == Object.keys(rtn).length){
             //console.log("before pushAttestation call:" + cur_session.username)
             const counter = regResult.authnrData.get('counter');
+            // Capture transports from client request
+            const transports = body.transports ? JSON.stringify(body.transports) : null;
             await pushAttestation(cur_session.fido2lib.config.rpId, cur_session.username, 
               regResult.authnrData.get('credentialPublicKeyPem'), counter, regResult.authnrData.get('fmt'),
-              new Uint8Array(credId), aaguid, unique_device_id, request.headers['user-agent']?request.headers['user-agent']:"");
+              new Uint8Array(credId), aaguid, unique_device_id, request.headers['user-agent']?request.headers['user-agent']:"", transports);
             
             mapCredidUsername[new Uint8Array(credId)]=cur_session.username;
             
@@ -1835,7 +1869,7 @@ async function getAttestationData(rpId, username){
 
     try {
       const results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT public_key, counter, fmt, aaguid, credid_base64, t.unique_device_id '+
+        connection.query(SqlString.format('SELECT public_key, counter, fmt, aaguid, credid_base64, t.unique_device_id, t.transports '+
             ' from registered_rps p, registered_users u, attestations t ' +
             ' where p.deleted is null and u.deleted is null and t.deleted is null ' +
             ' and p.rp_id=u.rp_id and t.user_id=u.user_id '+
@@ -1854,7 +1888,8 @@ async function getAttestationData(rpId, username){
             fmt:element.fmt,
             aaguid:element.aaguid,
             credId:base64url.toBuffer(element.credid_base64),
-            unique_device_id: element.unique_device_id
+            unique_device_id: element.unique_device_id,
+            transports: element.transports ? JSON.parse(element.transports) : null
           })
         });
       }
@@ -2232,10 +2267,10 @@ async function activeUserSession(rpId, session_id){
   }
 }
 
-async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id, user_agent){
+async function pushAttestation(rpId, username, publickey, counter, fmt, credId, aaguid, unique_device_id, user_agent, transports){
   if(typeof rpId != "string" || typeof username != "string" || typeof publickey != "string" || typeof counter != "number"
       || typeof fmt != "string" || typeof aaguid != "string" || (unique_device_id && typeof unique_device_id != "string")
-      || typeof user_agent != "string") return;
+      || typeof user_agent != "string" || (transports && typeof transports != "string")) return;
 
   if('mem'==process.env.STORAGE_TYPE){
     //console.log("try pushAttestation:" + username)
@@ -2246,7 +2281,8 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       credId: credId,
       aaguid: aaguid,
       userAgent: user_agent,
-      unique_device_id: unique_device_id
+      unique_device_id: unique_device_id,
+      transports: transports
     })
 
     //console.log("pushAttestation:" + username)
@@ -2271,8 +2307,8 @@ async function pushAttestation(rpId, username, publickey, counter, fmt, credId, 
       if(0<result_userid.length){
         const results = await new Promise((resolve, reject) => {
           connection.query(
-            SqlString.format('INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid, unique_device_id, user_agent ) values(?,?,?,?,?,?,?,?) ', 
-              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid, unique_device_id?unique_device_id:'', user_agent]),
+            SqlString.format('INSERT into attestations( user_id, public_key, counter, fmt, credid_base64, aaguid, unique_device_id, user_agent, transports ) values(?,?,?,?,?,?,?,?,?) ', 
+              [result_userid[0].user_id, publickey, counter, fmt, base64url.encode(credId), aaguid, unique_device_id?unique_device_id:'', user_agent, transports?transports:null]),
               (error, results) => {
                 if (error) reject(error)
                 resolve(results)

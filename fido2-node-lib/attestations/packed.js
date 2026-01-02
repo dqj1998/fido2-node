@@ -154,13 +154,127 @@ async function validateSignature(
 	return verify;
 }
 
-async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
-	// ToDo: Do something with x5c! Prefixed with _ to avoid linting errors for now
+/**
+ * FIDO-specific certificate chain validation
+ * 
+ * This function validates certificate chains according to FIDO specifications,
+ * NOT PKIX/TLS standards. Key differences:
+ * - Intermediate certificates are NOT required to have BasicConstraints CA=true
+ * - Chain validation uses issuer/subject matching only
+ * - Root trust comes exclusively from FIDO Metadata Service
+ * - Signature verification on each cert-issuer pair
+ * - Expiration dates are checked for ALL certificates in the chain
+ * 
+ * This is necessary to pass FIDO Conformance test P-2, which specifically
+ * tests chains with non-CA intermediate certificates.
+ * 
+ * @param {Array<Certificate>} certs - Certificate chain [attCert, intermediate1, ..., rootOrNearRoot]
+ * @param {Array<Certificate>} roots - Trusted root certificates from FIDO MDS
+ * @param {Object} audit - Audit object for warnings (optional)
+ */
+async function validateFidoCertChain(certs, roots, audit) {
+	if (!certs || certs.length === 0) {
+		throw new Error("FIDO cert chain validation: empty certificate chain");
+	}
 
-	// make sure our root certs are loaded
-	//if (CertManager.getCerts().size === 0) {
-	//	rootCertList.u2fRootCerts.forEach((cert) => CertManager.addCert(cert));
-	//}
+	const nowMs = Date.now();
+
+	// Step 0: Check expiration dates for ALL certificates in the chain
+	// This must be done before any other validation to catch F-12 style failures
+	for (let i = 0; i < certs.length; i++) {
+		const cert = certs[i];
+		if (cert._cert && cert._cert.notAfter && cert._cert.notAfter.value < nowMs) {
+			throw new Error(`FIDO cert chain validation: certificate at position ${i} is expired`);
+		}
+		if (cert._cert && cert._cert.notBefore && cert._cert.notBefore.value > nowMs) {
+			throw new Error(`FIDO cert chain validation: certificate at position ${i} is not yet valid`);
+		}
+	}
+
+	// Step 1: Validate chain ordering using issuer/subject matching
+	// Each certificate's issuer must match the next certificate's subject
+	for (let i = 0; i < certs.length - 1; i++) {
+		const currentCert = certs[i];
+		const issuerCert = certs[i + 1];
+		
+		const issuerDN = currentCert._cert.issuer.typesAndValues[0].value.valueBlock.value;
+		const subjectDN = issuerCert._cert.subject.typesAndValues[0].value.valueBlock.value;
+		
+		if (issuerDN !== subjectDN) {
+			throw new Error(`FIDO cert chain validation: broken chain at position ${i}. Certificate issuer does not match next certificate subject.`);
+		}
+	}
+
+	// Step 2: Verify each certificate's signature against its issuer
+	// For all certs except the top-most (which should be verified against a root)
+	for (let i = 0; i < certs.length - 1; i++) {
+		const currentCert = certs[i];
+		const issuerCert = certs[i + 1];
+		
+		try {
+			// Verify that currentCert is signed by issuerCert
+			await currentCert._cert.verify(issuerCert._cert);
+		} catch (err) {
+			throw new Error(`FIDO cert chain validation: signature verification failed at position ${i}: ${err.message}`);
+		}
+	}
+
+	// Step 3: Verify the top-most certificate against FIDO MDS roots
+	// The top-most cert in the chain MUST NOT be self-signed.
+	// If the chain includes a self-signed root, that violates FIDO requirements
+	// (roots must come from MDS, not be included in the attestation statement).
+	const topCert = certs[certs.length - 1];
+	const topCertSubject = topCert._cert.subject.typesAndValues[0].value.valueBlock.value;
+	const topCertIssuer = topCert._cert.issuer.typesAndValues[0].value.valueBlock.value;
+	
+	// Check if top cert is self-signed (which would indicate it's a root in the chain)
+	if (topCertIssuer === topCertSubject) {
+		throw new Error("FIDO cert chain validation: chain includes a self-signed root certificate. Root certificates must come from FIDO MDS, not from the attestation statement (x5c).");
+	}
+	
+	if (!roots || roots.length === 0) {
+		// No roots available from MDS - issue a warning but allow validation to proceed
+		// This may happen when authenticator is not registered with MDS
+		if (audit) {
+			audit.warning.set("attestation-root-not-validated", 
+				"No root certificates available from FIDO MDS for this authenticator. Chain structure validated but root trust could not be verified.");
+		}
+		return;
+	}
+
+	// Try to find a matching root certificate that issued the top cert
+	let rootVerified = false;
+	let lastError = null;
+	
+	for (const rootCert of roots) {
+		try {
+			const rootCertSubject = rootCert._cert.subject.typesAndValues[0].value.valueBlock.value;
+			
+			// The top cert's issuer must match this root's subject
+			if (topCertIssuer === rootCertSubject) {
+				// Verify the top cert is signed by this root
+				await topCert._cert.verify(rootCert._cert);
+				rootVerified = true;
+				break;
+			}
+		} catch (err) {
+			lastError = err;
+			// Continue trying other roots
+			continue;
+		}
+	}
+
+	if (!rootVerified) {
+		throw new Error(`FIDO cert chain validation: top-most certificate could not be verified against any FIDO MDS root certificate. ${lastError ? 'Last error: ' + lastError.message : ''}`);
+	}
+}
+
+async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
+	// FIDO-specific certificate validation
+	// NOTE: We intentionally DO NOT use generic PKIX/TLS certificate chain validation
+	// because FIDO packed attestation allows non-CA intermediate certificates.
+	// FIDO Conformance test P-2 specifically requires accepting chains where
+	// intermediate certificates do not have BasicConstraints CA=true.
 
 	var meta_entry
 	if(aaguid){		
@@ -180,31 +294,22 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 	// decode attestation cert
 	const attCert = new Certificate(coerceToBase64(parsedAttCert, "parsedAttCert"));
 	
-	if(0 < _x5c.length){//validate chain
-		let certs = []
-		//_x5c.forEach(elem => certs.unshift(new Certificate(coerceToBase64(elem, "x5cElem"))))
-		_x5c.forEach(elem => certs.push(new Certificate(coerceToBase64(elem, "x5cElem"))))
-		certs.push(attCert)
+	if(0 < _x5c.length){
+		// Validate certificate chain using FIDO-specific rules
+		// Build certificate chain: [attCert, intermediate1, intermediate2, ..., rootOrNearRoot]
+		let certs = [attCert];
+		_x5c.forEach(elem => certs.push(new Certificate(coerceToBase64(elem, "x5cElem"))));
 
-		for(let i = certs.length - 1; i > 0; i--) {
-			const issuernm = certs[i]._cert.issuer.typesAndValues[0].value.valueBlock.value
-			const certnm = certs[i - 1]._cert.subject.typesAndValues[0].value.valueBlock.value
-			if(issuernm !== certnm){
-				throw new Error("Broken certificate path.");
-			}
-		}
-
-		let roots = []// Array.from(CertManager.getCerts().values())
-		if(meta_entry){
+		// Collect root certificates from FIDO MDS
+		let roots = [];
+		if(meta_entry && meta_entry.attestationRootCertificates){
 			meta_entry.attestationRootCertificates.forEach((ent) => roots.push(new Certificate(ent)));
 		}
 
-		try{
-			await CertManager.verifyCertChain(certs, roots, null)
-		} catch (e) {
-			throw e;
-		}		
-	} else {//Verify one cert		
+		// FIDO-specific chain validation (does not require CA=true on intermediates)
+		await validateFidoCertChain(certs, roots, audit);
+	} else {
+		// Single certificate case: validate attestation cert against MDS roots
 		CertManager.removeAll();
 		rootCertList.u2fRootCerts.forEach((cert) => CertManager.addCert(cert));
 
@@ -215,17 +320,6 @@ async function validateCerts(parsedAttCert, aaguid, _x5c, audit) {
 				meta_entry.metadataStatement.attestationRootCertificates.forEach((ent) => CertManager.addCert(ent));
 			}
 		}
-
-		//for debug
-		/*var ciss='', ssub='';
-		CertManager.getCerts().forEach((c)=>{
-			ciss += (c._cert.issuer ? c._cert.issuer.typesAndValues[0].value.valueBlock.value : "NON issuer") + ";";
-			ssub += (c._cert.subject.typesAndValues[0].value.valueBlock.value) + ";";
-		});
-		console.log(attCert._cert.subject.typesAndValues[0].value.valueBlock.value)
-		console.log(ssub)
-		console.log(ciss)*/
-		//end of debug
 
 		try {
 			await attCert.verify();

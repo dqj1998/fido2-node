@@ -1,0 +1,308 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-02T09:59:30.005Z",
+    "generatedAt": "1/2/2026, 6:59:30 PM",
+    "platform": "darwin",
+    "nodeVersion": "v22.14.0"
+  },
+  "summary": {
+    "registration": {
+      "operationCount": 3,
+      "preRegisterAvg": 16.12925374,
+      "registerAvg": 32.662260000000074
+    },
+    "authentication": {
+      "operationCount": 3,
+      "preAuthenticateAvg": 25.257060850000006,
+      "authenticateAvg": 38.04579587999998
+    },
+    "concurrency": null
+  },
+  "registration": [
+    {
+      "operation": "preRegister",
+      "iterations": 100,
+      "min": 14.709540999999945,
+      "max": 19.746667000000116,
+      "avg": 16.12925374,
+      "p50": 16.10870799999998,
+      "p95": 16.345583999999917,
+      "p99": 19.746667000000116
+    },
+    {
+      "operation": "register",
+      "iterations": 50,
+      "min": 31.456833000000188,
+      "max": 46.56224999999995,
+      "avg": 32.662260000000074,
+      "p50": 32.27637500000037,
+      "p95": 32.85179199999993,
+      "p99": 46.56224999999995
+    },
+    {
+      "type": "algorithm_comparison",
+      "data": {
+        "ES256": {
+          "algorithm": "ES256",
+          "iterations": 30,
+          "avg": 27.061295766666717,
+          "min": 26.28350000000046,
+          "max": 27.469041999999718,
+          "p95": 27.463874999999916
+        },
+        "RS256": {
+          "algorithm": "RS256",
+          "iterations": 30,
+          "avg": 37.42287500000008,
+          "min": 36.702000000000226,
+          "max": 38.02049999999963,
+          "p95": 37.904625000000124
+        },
+        "EdDSA": {
+          "algorithm": "EdDSA",
+          "iterations": 30,
+          "avg": 32.59280840000013,
+          "min": 30.264000000000124,
+          "max": 44.26312499999949,
+          "p95": 32.79066700000021
+        }
+      }
+    },
+    {
+      "operation": "excludeCredentials_query",
+      "recordCount": 5,
+      "iterations": 100,
+      "avg": 9.078371649999982,
+      "min": 8.06395799999973,
+      "max": 15.746582999999191,
+      "p95": 9.79045799999949
+    }
+  ],
+  "authentication": [
+    {
+      "operation": "preAuthenticate",
+      "iterations": 100,
+      "credentialCount": 3,
+      "min": 23.082291999999825,
+      "max": 35.92170900000019,
+      "avg": 25.257060850000006,
+      "p50": 25.157958000000008,
+      "p95": 27.240666999999974,
+      "p99": 35.92170900000019
+    },
+    {
+      "operation": "authenticate",
+      "iterations": 50,
+      "min": 35.87258399999973,
+      "max": 39.48050000000012,
+      "avg": 38.04579587999998,
+      "p50": 38.178750000000036,
+      "p95": 38.792625000000044,
+      "p99": 39.48050000000012
+    },
+    {
+      "type": "credential_count_comparison",
+      "data": [
+        {
+          "credentialCount": 1,
+          "avg": 9.047219120000046,
+          "min": 7.534791000000041,
+          "max": 9.858292000000802,
+          "p95": 9.446625000000495
+        },
+        {
+          "credentialCount": 5,
+          "avg": 9.047790800000003,
+          "min": 7.370042000000467,
+          "max": 13.522291999999652,
+          "p95": 9.417582999999468
+        },
+        {
+          "credentialCount": 10,
+          "avg": 8.858439180000133,
+          "min": 7.945250000000669,
+          "max": 9.248375000000124,
+          "p95": 9.16662499999984
+        },
+        {
+          "credentialCount": 20,
+          "avg": 9.812462480000049,
+          "min": 8.127667000000656,
+          "max": 40.300334000000475,
+          "p95": 11.696208999999726
+        }
+      ]
+    },
+    {
+      "type": "authentication_algorithm_comparison",
+      "data": {
+        "ES256": {
+          "algorithm": "ES256",
+          "iterations": 30,
+          "avg": 29.098709599999925,
+          "min": 28.288166000000274,
+          "max": 29.950291000000107,
+          "p95": 29.61016699999982
+        },
+        "RS256": {
+          "algorithm": "RS256",
+          "iterations": 30,
+          "avg": 39.42952083333342,
+          "min": 38.03229099999953,
+          "max": 45.34533300000112,
+          "p95": 41.12758400000166
+        },
+        "EdDSA": {
+          "algorithm": "EdDSA",
+          "iterations": 30,
+          "avg": 26.39980686666695,
+          "min": 25.493124999999054,
+          "max": 27.844708000000537,
+          "p95": 27.054834000000483
+        }
+      }
+    },
+    {
+      "operation": "counter_update",
+      "iterations": 100,
+      "avg": 13.155849220000055,
+      "min": 11.610958999999639,
+      "max": 20.336084000000483,
+      "p95": 13.35529200000019
+    }
+  ],
+  "concurrency": [
+    {
+      "type": "concurrent_registration",
+      "data": [
+        {
+          "concurrency": 10,
+          "iterations": 10,
+          "min": 31.84012500000003,
+          "max": 32.48762500000001,
+          "avg": 31.93789590000001,
+          "p50": 31.867625000000004,
+          "p95": 32.48762500000001,
+          "p99": 32.48762500000001,
+          "avgPoolStats": {
+            "activeConnections": 5,
+            "maxActiveConnections": 9
+          }
+        },
+        {
+          "concurrency": 25,
+          "iterations": 25,
+          "min": 0,
+          "max": 47.25895800000001,
+          "avg": 18.8903,
+          "p50": 0,
+          "p95": 47.25562500000001,
+          "p99": 47.25895800000001,
+          "avgPoolStats": {
+            "activeConnections": 7,
+            "maxActiveConnections": 9
+          }
+        },
+        {
+          "concurrency": 50,
+          "iterations": 50,
+          "min": 0,
+          "max": 68.96295900000001,
+          "avg": 13.780598340000001,
+          "p50": 0,
+          "p95": 68.95075000000003,
+          "p99": 68.96295900000001,
+          "avgPoolStats": {
+            "activeConnections": 9,
+            "maxActiveConnections": 9
+          }
+        }
+      ]
+    },
+    {
+      "type": "concurrent_authentication",
+      "data": [
+        {
+          "concurrency": 10,
+          "iterations": 10,
+          "min": 22.728624999999965,
+          "max": 22.896834000000013,
+          "avg": 22.8035626,
+          "p50": 22.848333000000025,
+          "p95": 22.896834000000013,
+          "p99": 22.896834000000013
+        },
+        {
+          "concurrency": 25,
+          "iterations": 25,
+          "min": 0,
+          "max": 44.25933299999997,
+          "avg": 17.669323239999997,
+          "p50": 0,
+          "p95": 44.23670800000002,
+          "p99": 44.25933299999997
+        },
+        {
+          "concurrency": 50,
+          "iterations": 50,
+          "min": 0,
+          "max": 58.86374999999998,
+          "avg": 11.7660375,
+          "p50": 0,
+          "p95": 58.85120799999993,
+          "p99": 58.86374999999998
+        }
+      ]
+    },
+    {
+      "type": "mixed_operations",
+      "totalConcurrency": 40,
+      "registrations": {
+        "count": 10,
+        "avg": 39.2159998,
+        "p95": 39.484083000000055
+      },
+      "authentications": {
+        "count": 0,
+        "avg": 0,
+        "p95": 0
+      }
+    },
+    {
+      "type": "pool_exhaustion",
+      "poolSize": 10,
+      "requestCount": 15,
+      "completedRequests": 15,
+      "timingsMin": 12.536749999999984,
+      "timingsMax": 16.191874999999982,
+      "timingsAvg": 14.608577800000004,
+      "poolExhaustedEvents": 0
+    },
+    {
+      "type": "throughput_measurement",
+      "data": [
+        {
+          "profile": "light",
+          "concurrency": 10,
+          "duration": 1003,
+          "completedRequests": 600,
+          "throughputRPS": 598
+        },
+        {
+          "profile": "medium",
+          "concurrency": 25,
+          "duration": 1001,
+          "completedRequests": 550,
+          "throughputRPS": 549.44
+        },
+        {
+          "profile": "heavy",
+          "concurrency": 50,
+          "duration": 1009,
+          "completedRequests": 520,
+          "throughputRPS": 515.17
+        }
+      ]
+    }
+  ]
+}
