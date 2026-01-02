@@ -33,6 +33,20 @@
             "registration_session_timeout": "999"
         },
         {
+            "domain": "fido2.amipro.me",
+            "reg_page": "/sso.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred",
+            "status": "OK"
+        },
+        {
+            "domain": "amipro-dev.ngrok-free.app",
+            "reg_page": "/sso.html",
+            "uv_auth": "preferred",
+            "uv_reg": "preferred",
+            "status": "OK"
+        },
+        {
             "domain": "rp01.abc.com",
             "enterprise": true,
             "enterprise_aaguids": [
@@ -147,7 +161,9 @@
             "domain": "a1.t.com",
             "reg_page": "/dev.jsp",
             "uv_auth": "preferred",
-            "uv_reg": "preferred"
+            "uv_reg": "preferred",
+            "authenticator_attachment": "platform",
+            "device_limit": "6"
         },
         {
             "domain": "a2.tt.net",
@@ -163,5 +179,5 @@
             "uv_reg": "preferred"
         }
     ],
-    "backupfile": "domain.json1697597813780"
+    "backupfile": "domain.json1767335484596"
 }
