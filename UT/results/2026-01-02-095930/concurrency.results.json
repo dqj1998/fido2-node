@@ -1,0 +1,134 @@
+[
+  {
+    "type": "concurrent_registration",
+    "data": [
+      {
+        "concurrency": 10,
+        "iterations": 10,
+        "min": 31.84012500000003,
+        "max": 32.48762500000001,
+        "avg": 31.93789590000001,
+        "p50": 31.867625000000004,
+        "p95": 32.48762500000001,
+        "p99": 32.48762500000001,
+        "avgPoolStats": {
+          "activeConnections": 5,
+          "maxActiveConnections": 9
+        }
+      },
+      {
+        "concurrency": 25,
+        "iterations": 25,
+        "min": 0,
+        "max": 47.25895800000001,
+        "avg": 18.8903,
+        "p50": 0,
+        "p95": 47.25562500000001,
+        "p99": 47.25895800000001,
+        "avgPoolStats": {
+          "activeConnections": 7,
+          "maxActiveConnections": 9
+        }
+      },
+      {
+        "concurrency": 50,
+        "iterations": 50,
+        "min": 0,
+        "max": 68.96295900000001,
+        "avg": 13.780598340000001,
+        "p50": 0,
+        "p95": 68.95075000000003,
+        "p99": 68.96295900000001,
+        "avgPoolStats": {
+          "activeConnections": 9,
+          "maxActiveConnections": 9
+        }
+      }
+    ]
+  },
+  {
+    "type": "concurrent_authentication",
+    "data": [
+      {
+        "concurrency": 10,
+        "iterations": 10,
+        "min": 22.728624999999965,
+        "max": 22.896834000000013,
+        "avg": 22.8035626,
+        "p50": 22.848333000000025,
+        "p95": 22.896834000000013,
+        "p99": 22.896834000000013
+      },
+      {
+        "concurrency": 25,
+        "iterations": 25,
+        "min": 0,
+        "max": 44.25933299999997,
+        "avg": 17.669323239999997,
+        "p50": 0,
+        "p95": 44.23670800000002,
+        "p99": 44.25933299999997
+      },
+      {
+        "concurrency": 50,
+        "iterations": 50,
+        "min": 0,
+        "max": 58.86374999999998,
+        "avg": 11.7660375,
+        "p50": 0,
+        "p95": 58.85120799999993,
+        "p99": 58.86374999999998
+      }
+    ]
+  },
+  {
+    "type": "mixed_operations",
+    "totalConcurrency": 40,
+    "registrations": {
+      "count": 10,
+      "avg": 39.2159998,
+      "p95": 39.484083000000055
+    },
+    "authentications": {
+      "count": 0,
+      "avg": 0,
+      "p95": 0
+    }
+  },
+  {
+    "type": "pool_exhaustion",
+    "poolSize": 10,
+    "requestCount": 15,
+    "completedRequests": 15,
+    "timingsMin": 12.536749999999984,
+    "timingsMax": 16.191874999999982,
+    "timingsAvg": 14.608577800000004,
+    "poolExhaustedEvents": 0
+  },
+  {
+    "type": "throughput_measurement",
+    "data": [
+      {
+        "profile": "light",
+        "concurrency": 10,
+        "duration": 1003,
+        "completedRequests": 600,
+        "throughputRPS": 598
+      },
+      {
+        "profile": "medium",
+        "concurrency": 25,
+        "duration": 1001,
+        "completedRequests": 550,
+        "throughputRPS": 549.44
+      },
+      {
+        "profile": "heavy",
+        "concurrency": 50,
+        "duration": 1009,
+        "completedRequests": 520,
+        "throughputRPS": 515.17
+      }
+    ]
+  }
+]
