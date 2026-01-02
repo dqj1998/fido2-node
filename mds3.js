@@ -21,9 +21,20 @@ if(process.env.FIDO_CONFORMANCE_TEST){
           }
         }
       }
-    );
+    ).catch(err => {
+      // Handle promise rejection from judgeRefresh
+      if (typeof logger !== 'undefined') {
+        logger.warn('Failed to refresh MDS3 BLOB. Check if MDS3 URL is valid and up-to-date: ' + err.message)
+      } else {
+        console.warn('Failed to refresh MDS3 BLOB: ' + err.message)
+      }
+    });
   } catch (err) {
-    logger.warn('Failed to load fido-conformance-metadata-statements.' + err.message)
+    if (typeof logger !== 'undefined') {
+      logger.warn('Failed to load fido-conformance-metadata-statements.' + err.message)
+    } else {
+      console.warn('Failed to load fido-conformance-metadata-statements: ' + err.message)
+    }
   }
 }
 

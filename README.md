@@ -201,6 +201,7 @@ Body is JSON with MNG_TOKEN:
 We passed the latest version of FIDO Conformance Tools with MDS3
 
 ## Preperations
+0. Download latest FIDO conformance tools from https://builds.fidoalliance.org/
 1. Download Metadata by clicking DOWNLOAD TEST METADATA on FIDO conformance tools
 2. Copy all files into fido-conformance-metadata-statements
 3. Set FIDO_CONFORMANCE_TEST=1 in .env file
@@ -208,7 +209,7 @@ We passed the latest version of FIDO Conformance Tools with MDS3
 
 # Troubleshoot
 ## AxiosError at booting when opened FIDO_CONFORMANCE_TEST=1
-This is caused by expired MDS3 BLOB download url in config-fido-conformance.json. Create new URL by click 'MDS3 TEST SERVER' button on FIDO Conformance test tool FIDO2 screen.
+This is caused by expired MDS3 BLOB download url in fido2-node/fido-mds3/config/config-fido-conformance.json. Create new URL by click 'MDS3 TEST SERVER' button on FIDO Conformance test tool FIDO2 screen.
 
 ## Fetch failed when opened FIDO_CONFORMANCE_TEST=1
 Click 'allow connection to untrusted ssl servers' in MENU->Advanced config on FIDO Conformance test tool FIDO2 screen.

@@ -240,7 +240,7 @@ async function AppController(request, response) {
         response.write("<html><body><h1>404 Not Found</h1></body></html>");
         response.end();
       } finally {
-        connection.release()
+        if (connection) connection.release()
       }
       
     }else{
