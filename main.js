@@ -991,7 +991,7 @@ function setUserVerification(domain, authenticatorSelection, userVerificationMap
     }
   }
 
-  logger.debug("rtn authenticatorSelection="+rtn);
+  logger.debug("rtn authenticatorSelection="+JSON.stringify(rtn));
   return rtn;
 }
 
