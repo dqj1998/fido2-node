@@ -1,0 +1,27 @@
+{
+  "name": "fido2-node-tests",
+  "version": "1.0.0",
+  "description": "Unit and Performance Tests for FIDO2-Node",
+  "scripts": {
+    "test": "mocha UT/sql-injection.unit.test.js UT/functions.unit.test.js --reporter spec --timeout 5000",
+    "test:unit": "mocha UT/**/*.unit.test.js --reporter spec --timeout 5000",
+    "test:sql-injection": "mocha UT/sql-injection.unit.test.js --reporter spec --timeout 5000",
+    "test:functions": "mocha UT/functions.unit.test.js --reporter spec --timeout 5000",
+    "test:coverage": "nyc mocha UT/**/*.unit.test.js --reporter spec --timeout 5000",
+    "test:performance": "bash UT/run-performance-tests.sh",
+    "test:all": "npm run test:unit && npm run test:performance"
+  },
+  "keywords": [
+    "fido2",
+    "authentication",
+    "unit-tests",
+    "performance-tests",
+    "sql-injection"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "mocha": "^10.0.0",
+    "nyc": "^15.0.0"
+  }
+}

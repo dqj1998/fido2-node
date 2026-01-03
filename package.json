@@ -1,12 +1,17 @@
 {
   "scripts": {
     "test": "jest",
+    "test:unit": "mocha UT/**/*.unit.test.js --reporter spec --timeout 5000",
+    "test:sql-injection": "mocha UT/sql-injection.unit.test.js --reporter spec --timeout 5000",
+    "test:functions": "mocha UT/functions.unit.test.js --reporter spec --timeout 5000",
+    "test:coverage": "nyc mocha UT/**/*.unit.test.js --reporter spec --timeout 5000",
     "test:performance": "jest UT/*.performance.test.js",
     "test:performance:watch": "jest UT/*.performance.test.js --watch",
     "test:register": "jest UT/register.performance.test.js",
     "test:authenticate": "jest UT/authenticate.performance.test.js",
     "test:concurrency": "jest UT/concurrency.performance.test.js",
-    "test:report": "node UT/performance-report.js"
+    "test:report": "node UT/performance-report.js",
+    "test:all": "npm run test:unit && npm run test:performance"
   },
   "dependencies": {
     "@hexagon/base64": "^1.1.25",
@@ -28,7 +33,9 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
-    "supertest": "^6.3.3",
-    "sinon": "^17.0.1"
+    "mocha": "^11.7.5",
+    "nyc": "^15.1.0",
+    "sinon": "^17.0.1",
+    "supertest": "^6.3.3"
   }
 }

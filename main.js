@@ -35,6 +35,18 @@ const mysql_pool = mysql.createPool({
 });
 var SqlString = require('sqlstring');
 
+// Helper function to safely build parameterized IN clauses
+function buildInClause(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    return { clause: '(NULL)', params: [] };
+  }
+  const placeholders = values.map(() => '?').join(',');
+  return {
+    clause: `(${placeholders})`,
+    params: Array.from(values)
+  };
+}
+
 var server
 if(process.env.SSLKEY && process.env.SSLCRT){
   const options = {
@@ -1172,17 +1184,26 @@ async function getDomainData(domains, start, end){
     })
 
     try {
-      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+      // Build parameterized IN clause for domains
+      const { clause: domainClause, params: domainParams } = buildInClause(domains);
 
       var results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT rp_id from registered_rps r '+
-              'where '+ domains_where +' deleted is null ', 
-            []),
+        connection.query('SELECT rp_id from registered_rps r '+
+              'where r.rp_domain in ' + domainClause + ' and deleted is null ', 
+            domainParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
             })
       })
+
+      if (results.length === 0) {
+        rtn.total_users = 0;
+        rtn.active_users = 0;
+        rtn.total_auth = 0;
+        rtn.fail_auth = 0;
+        return rtn;
+      }
 
       var rpids_where = ' r.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
       results = await new Promise((resolve, reject) => {
@@ -1253,17 +1274,24 @@ async function listUsers(domains, start, end, search = null, last_created = null
     })
 
     try {
-      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+      // Build parameterized IN clause for domains
+      const { clause: domainClause, params: domainParams } = buildInClause(domains);
 
       var results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
-              'where '+ domains_where +' deleted is null ', 
-            []),
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where r.rp_domain in ' + domainClause + ' and deleted is null ', 
+            domainParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
             })
       })
+
+      if (results.length === 0) {
+        rtn.users = [];
+        rtn.last_created = null;
+        return rtn;
+      }
 
       //build hashmap of rp_domain and rp_id
       var rp_domain_rp_id = {}
@@ -1272,17 +1300,36 @@ async function listUsers(domains, start, end, search = null, last_created = null
       }
 
       var rpids_where = ' u.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
-      var search_where
-      if(search && search.length >0){
-        search_where = ' ( u.username like "%'+search+'%" or u.displayname like "%'+search+'%" ) '
-      }else search_where = ' 1=1 '
+      
+      // Build search condition with parameterization
+      var search_where = ' 1=1 '
+      var search_params = []
+      if(search && search.length > 0){
+        search_where = ' ( u.username like ? or u.displayname like ? ) '
+        search_params = ['%' + search + '%', '%' + search + '%']
+      }
 
-      var last_created_where = last_created && last_created.length >0 ? ' u.created < "'+last_created+'" ':' 1=1 '
+      // Build last_created condition with validation
+      var last_created_where = ' 1=1 '
+      var last_created_param = null
+      if(last_created && last_created.length > 0){
+        const timestampRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+        if(timestampRegex.test(last_created)){
+          last_created_where = ' u.created < ? '
+          last_created_param = last_created
+        }
+      }
+
+      // Combine all parameters
+      const allParams = [...search_params];
+      if(last_created_param) allParams.push(last_created_param);
+      allParams.push(start, end);
+
       results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT u.user_id, u.rp_id, username, displayname, u.created, s.session_id from registered_users u left join user_sessions s on u.user_id=s.user_id '+
+        const sql = 'SELECT u.user_id, u.rp_id, username, displayname, u.created, s.session_id from registered_users u left join user_sessions s on u.user_id=s.user_id '+
               'where '+ rpids_where + ' and ' + search_where + ' and ' + last_created_where + 
-              ' and registered=true and u.deleted is null and u.created between ? and ? order by u.created desc limit ' + limit, 
-            [start, end]),
+              ' and registered=true and u.deleted is null and u.created between ? and ? order by u.created desc limit ' + limit;
+        connection.query(sql, allParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1345,17 +1392,26 @@ async function getActionData(domains, start, end){
     })
 
     try {
-      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+      // Build parameterized IN clause for domains
+      const { clause: domainClause, params: domainParams } = buildInClause(domains);
 
       var results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT rp_id from registered_rps r '+
-              'where '+ domains_where +' deleted is null ', 
-            []),
+        connection.query('SELECT rp_id from registered_rps r '+
+              'where r.rp_domain in ' + domainClause + ' and deleted is null ', 
+            domainParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
             })
       })
+
+      if (results.length === 0) {
+        rtn.total_auth = 0;
+        rtn.total_reg = 0;
+        rtn.total_auth_fail = 0;
+        rtn.total_reg_fail = 0;
+        return rtn;
+      }
 
       var rpids_where = ' r.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '      
 
@@ -1428,17 +1484,24 @@ async function listActions(domains, start, end, search = null, last_created = nu
     })
 
     try {
-      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+      // Build parameterized IN clause for domains
+      const { clause: domainClause, params: domainParams } = buildInClause(domains);
 
       var results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
-              'where '+ domains_where +' deleted is null ', 
-            []),
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where r.rp_domain in ' + domainClause + ' and deleted is null ', 
+            domainParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
             })
       })
+
+      if (results.length === 0) {
+        rtn.actions = [];
+        rtn.last_created = null;
+        return rtn;
+      }
 
       //build hashmap of rp_domain and rp_id
       var rp_domain_rp_id = {}
@@ -1447,14 +1510,38 @@ async function listActions(domains, start, end, search = null, last_created = nu
       }
 
       var rpids_where = ' rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
-      var search_where = search && search.length >0 ? ' username like "%'+search+'%" ':' 1=1 '
-      var last_created_where = last_created && last_created.length >0 ? ' a.created < "'+last_created+'" ':' 1=1 '
+      
+      // Build search condition with parameterization
+      var search_where = ' 1=1 '
+      var search_params = []
+      if(search && search.length > 0){
+        search_where = ' username like ? '
+        search_params = ['%' + search + '%']
+      }
+
+      // Build last_created condition with validation
+      var last_created_where = ' 1=1 '
+      var last_created_param = null
+      if(last_created && last_created.length > 0){
+        const timestampRegex = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+        if(timestampRegex.test(last_created)){
+          last_created_where = ' a.created < ? '
+          last_created_param = last_created
+        }
+      }
+
       var failed_where = fail_only?' error<>"" ':' 1=1 '
+
+      // Combine all parameters
+      const allParams = [...search_params];
+      if(last_created_param) allParams.push(last_created_param);
+      allParams.push(start, end);
+
       results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT action_id, rp_id, username, displayname, a.created, error, action_type from user_actions a, registered_users r '+
+        const sql = 'SELECT action_id, rp_id, username, displayname, a.created, error, action_type from user_actions a, registered_users r '+
               'where '+ rpids_where + ' and ' + search_where + ' and ' + last_created_where + ' and ' + failed_where +
-              ' and a.user_id=r.user_id and deleted is null and a.created between ? and ? order by a.created desc limit ' + limit, 
-            [start, end]),
+              ' and a.user_id=r.user_id and deleted is null and a.created between ? and ? order by a.created desc limit ' + limit;
+        connection.query(sql, allParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
@@ -1494,17 +1581,23 @@ async function delUser(domains, user_id){
     })
 
     try {
-      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+      // Build parameterized IN clause for domains
+      const { clause: domainClause, params: domainParams } = buildInClause(domains);
 
       var results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
-              'where '+ domains_where +' deleted is null ', 
-            []),
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where r.rp_domain in ' + domainClause + ' and deleted is null ', 
+            domainParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
             })
       })
+
+      if (results.length === 0) {
+        rtn.status = 'fail';
+        return rtn;
+      }
       
       var rpids_where = ' rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
       results = await new Promise((resolve, reject) => {
@@ -1564,17 +1657,23 @@ async function delDevice(domains, attest_id){
     })
 
     try {
-      var domains_where = ' r.rp_domain in ("' + domains.map(d => d).join('","') + '") and '
+      // Build parameterized IN clause for domains
+      const { clause: domainClause, params: domainParams } = buildInClause(domains);
 
       var results = await new Promise((resolve, reject) => {
-        connection.query(SqlString.format('SELECT rp_id, rp_domain from registered_rps r '+
-              'where '+ domains_where +' deleted is null ', 
-            []),
+        connection.query('SELECT rp_id, rp_domain from registered_rps r '+
+              'where r.rp_domain in ' + domainClause + ' and deleted is null ', 
+            domainParams,
             (error, results) => {
               if (error) reject(error)
               resolve(results)
             })
       })
+
+      if (results.length === 0) {
+        rtn.status = 'fail';
+        return rtn;
+      }
 
       var rpids_where = ' u.rp_id in (' + results.map(d => d.rp_id).join(',') + ') '
       results = await new Promise((resolve, reject) => {
