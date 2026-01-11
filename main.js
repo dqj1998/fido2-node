@@ -47,6 +47,32 @@ function buildInClause(values) {
   };
 }
 
+// Helper function to check if origin is allowed
+function isOriginAllowed(origin, registeredRps) {
+  if (!origin) return false;
+  
+  try {
+    const originUrl = new URL(origin);
+    const hostname = originUrl.hostname;
+    
+    // Check exact match
+    if (registeredRps.includes(hostname)) {
+      return true;
+    }
+    
+    // Check wildcard domains (domains starting with .)
+    for (const rp of registeredRps) {
+      if (rp.startsWith('.') && hostname.endsWith(rp)) {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 var server
 if(process.env.SSLKEY && process.env.SSLCRT){
   const options = {
@@ -272,10 +298,18 @@ async function AppController(request, response) {
     
   } else if(request.method === 'OPTIONS') {
     try{
-      response.setHeader("Access-Control-Allow-Origin", "*");
-      response.setHeader("Access-Control-Allow-Methods", "POST");
-      response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, access_token");
-      response.setHeader("Access-Control-Allow-Credentials", "true");
+      const origin = request.headers['origin'] || request.headers['referer'];
+      if (origin && isOriginAllowed(origin, registeredRps)) {
+        response.setHeader("Access-Control-Allow-Origin", origin);
+        response.setHeader("Access-Control-Allow-Methods", "POST");
+        response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, access_token");
+        response.setHeader("Access-Control-Allow-Credentials", "true");
+      } else {
+        response.statusCode = 403;
+        response.end(JSON.stringify({ status: 'failed', errorMessage: 'Origin not allowed' }));
+        logger.warn("Origin not allowed(Strangers want to access): " + origin)
+        return;
+      }
       response.end('OK');
       return
     }catch(ex){
@@ -296,7 +330,14 @@ async function AppController(request, response) {
 
       let real_path;
 
-      response.setHeader("Access-Control-Allow-Origin", "*");
+      // Secure CORS - validate origin against registered domains
+      const origin = request.headers['origin'] || req_origin;
+      if (origin && isOriginAllowed(origin, registeredRps)) {
+        response.setHeader("Access-Control-Allow-Origin", origin);
+      } else {
+        response.setHeader("Access-Control-Allow-Origin", FIDO_ORIGIN);
+      }
+
       response.setHeader("Access-Control-Allow-Methods", "POST");
       response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, access_token");
       response.setHeader("Access-Control-Allow-Credentials", "true");
