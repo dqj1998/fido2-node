@@ -1,0 +1,18 @@
+{
+  "domain": "epk.amipro.me",
+  "reg_page": "/success.html",
+  "uv_auth": "preferred",
+  "uv_reg": "preferred",
+  "user_session_active_timeout": 900,
+  "user_session_hard_timeout": 86400,
+  "registration_session_timeout": 900,
+  "status": "OK",
+  "description": "EPARK Passkey Login Demo Domain Configuration",
+  "notes": [
+    "This configuration is for the EPARK demo site at epk.amipro.me",
+    "For production EPARK integration, change domain to 'epark.jp' or '.epark.jp'",
+    "user_session_active_timeout: 15 minutes (900 seconds)",
+    "user_session_hard_timeout: 24 hours (86400 seconds)",
+    "registration_session_timeout: 15 minutes (900 seconds)"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "apps": [
+    {
+      "name": "fido2-portal",
+      "script": "app.js",
+      "cwd": "/opt/fido2-portal",
+      "instances": 2,
+      "exec_mode": "cluster",
+      "watch": false,
+      "max_memory_restart": "300M",
+      "env": {
+        "NODE_ENV": "production"
+      },
+      "error_file": "/opt/fido2-portal/logs/pm2-error.log",
+      "out_file": "/opt/fido2-portal/logs/pm2-out.log",
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z",
+      "merge_logs": true,
+      "min_uptime": "10s",
+      "max_restarts": 10,
+      "restart_delay": 4000,
+      "autorestart": true,
+      "kill_timeout": 5000,
+      "listen_timeout": 8000
+    }
+  ]
+}

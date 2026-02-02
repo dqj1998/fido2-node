@@ -1,0 +1,149 @@
+# =============================================================================
+# FIDO2 集群配置文件
+# =============================================================================
+# 复制此文件为 cluster.yaml 并根据实际环境修改配置
+# cp cluster.yaml.example cluster.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 集群基本信息
+# -----------------------------------------------------------------------------
+cluster:
+  # 集群名称（用于日志和标识）
+  name: fido2-production
+  
+  # 主域名（用于SSL证书申请）
+  domain: example.com
+  
+  # SSH连接配置
+  ssh:
+    # 用于连接所有服务器的用户名（需要sudo权限）
+    user: deploy
+    # SSH私钥路径（留空则使用默认 ~/.ssh/id_rsa）
+    key_file: ~/.ssh/fido2_cluster
+    # SSH端口
+    port: 22
+  
+  # 本地项目路径（用于rsync推送）
+  local_paths:
+    fido2_node: /Users/dqj/HDD/fido2Prjs/fido2-node
+    fido2_node_ex: /Users/dqj/HDD/fido2Prjs/fido2-node-ex
+    fido2_portal: /Users/dqj/HDD/fido2Prjs/fido2-portal
+
+# -----------------------------------------------------------------------------
+# 服务器配置
+# -----------------------------------------------------------------------------
+servers:
+  # Nginx负载均衡器 + fido2-portal（服务器1）
+  nginx:
+    ip: 192.168.1.10
+    hostname: nginx-lb
+    # 此服务器同时运行fido2-portal
+    run_portal: true
+  
+  # Node.js应用服务器集群
+  nodejs:
+    # 服务器2：纯应用服务器
+    - ip: 192.168.1.21
+      hostname: app-node-1
+      # 是否同时作为MySQL从服务器
+      db_replica: false
+    
+    # 服务器3：应用服务器 + MySQL从服务器（复用）
+    - ip: 192.168.1.22
+      hostname: app-node-2
+      db_replica: true
+  
+  # MySQL主服务器（服务器4）
+  mysql_master:
+    ip: 192.168.1.30
+    hostname: db-master
+
+# -----------------------------------------------------------------------------
+# MySQL数据库配置
+# -----------------------------------------------------------------------------
+mysql:
+  # 数据库root密码（首次安装时设置）
+  root_password: "YourSecureRootPassword123!"
+  
+  # fido2-node数据库
+  fido2_node_db:
+    name: fido2_node_db
+    user: fido2_node
+    password: "Fido2NodePass123!"
+  
+  # fido2-portal数据库
+  fido2_portal_db:
+    name: fido2_portal_db
+    user: fido2_portal
+    password: "Fido2PortalPass123!"
+  
+  # 复制配置
+  replication:
+    user: repl_user
+    password: "ReplPassword123!"
+  
+  # 备份配置
+  backup:
+    # 备份存储路径（在MySQL主服务器上）
+    path: /var/backups/mysql
+    # 备份保留天数
+    retention_days: 7
+    # 备份执行时间（cron格式：分 时）
+    schedule: "0 3"
+
+# -----------------------------------------------------------------------------
+# 应用配置
+# -----------------------------------------------------------------------------
+apps:
+  fido2_node:
+    # 应用监听端口（Nginx反向代理到此端口）
+    port: 8060
+    # PM2实例数（"max"表示使用所有CPU核心，或指定数字如2）
+    instances: "max"
+    # 存储类型：mysql 或 mem
+    storage: mysql
+    # 管理API令牌（用于portal调用）
+    mng_api_token: "your-secure-api-token-here"
+    # 是否启用扩展功能
+    enable_ex: true
+  
+  fido2_portal:
+    # 应用监听端口
+    port: 8065
+    # PM2实例数
+    instances: 2
+    # 会话配置
+    session:
+      secret: "your-session-secret-key-here"
+      timeout_minutes: 30
+
+# -----------------------------------------------------------------------------
+# SSL证书配置（Let's Encrypt）
+# -----------------------------------------------------------------------------
+ssl:
+  # Let's Encrypt注册邮箱
+  email: admin@example.com
+  
+  # 需要申请证书的域名列表
+  # 注意：Nginx按子域名区分服务，需要为以下子域名申请证书：
+  #   - fido2.{domain} -> FIDO2 API服务
+  #   - portal.{domain} -> Portal管理界面
+  # 可选方案：
+  #   1. 分别列出子域名（HTTP验证）
+  #   2. 使用通配符 *.{domain}（需DNS验证）
+  domains:
+    - fido2.example.com
+    - portal.example.com
+  
+  # 是否使用staging环境测试（首次部署建议先设为true测试，详细见README的 首次部署SSL证书推荐流程）
+  staging: false
+
+# -----------------------------------------------------------------------------
+# 日志配置
+# -----------------------------------------------------------------------------
+logging:
+  # 日志级别：debug, info, warn, error
+  level: info
+  # 日志保留天数
+  retention_days: 30
