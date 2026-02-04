@@ -19,6 +19,9 @@ const tpmAttestation = require("./attestations/tpm.js").tpmAttestation
 
 // add 'apple' attestation format
 const appleAttestation = require("./attestations/apple.js").appleAttestation
+
+// add 'android-key' attestation format
+const androidKeyAttestation = require("./attestations/androidKey.js").androidKeyAttestation
 const {
 	coerceToArrayBuffer,
 	abToBuf,
@@ -828,6 +831,11 @@ Fido2Lib.addAttestationFormat(
 	appleAttestation.name,
 	appleAttestation.parseFn,
 	appleAttestation.validateFn
+);
+Fido2Lib.addAttestationFormat(
+	androidKeyAttestation.name,
+	androidKeyAttestation.parseFn,
+	androidKeyAttestation.validateFn
 );
 //export { Fido2Lib };
 module.exports = Fido2Lib;
