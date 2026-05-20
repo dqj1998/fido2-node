@@ -133,7 +133,15 @@ if (EXT_FEATURES_ENABLED) {
       delUserDevices,
       generateRegSession,
       getRegSessionUsername,
-      logger
+      logger,
+      // MCPlet: expose internals for /auth/verify-assertion (fido2-node-ex)
+      getSessions: () => sessions,
+      getAttestationData,
+      discoverUserName,
+      getUserData,
+      recordUserAction,
+      getFido2LibForRpId: (rpId, body) => getFido2Lib(rpId, body),
+      checkResultRequest,
     });
     logger.info('Extension features enabled.');
   } catch (e) {
@@ -343,7 +351,7 @@ async function AppController(request, response) {
       response.setHeader("Access-Control-Allow-Credentials", "true");
       
       // Extension Features APIs gate and delegation
-      if (url.pathname.startsWith('/usr/') || url.pathname === '/mng/user/regsession' || url.pathname.startsWith('/reg/username')) {
+      if (url.pathname.startsWith('/usr/') || url.pathname === '/mng/user/regsession' || url.pathname.startsWith('/reg/username') || url.pathname.startsWith('/auth/')) {
         if (!(EXT_FEATURES_ENABLED && extensionHandler)) {
           response.end(JSON.stringify({ status: 'failed', errorMessage: 'SvrErr200: Extension features disabled' }));
           return;
